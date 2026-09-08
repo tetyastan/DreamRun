@@ -1,0 +1,192 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100vw;
+    height: 100dvh;
+    box-sizing: border-box;
+}
+
+    /* Main Menu Styling Elements */
+.menu-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+}
+
+.menu-screen h1 {
+    font-size: 3.5rem;
+    margin: 0;
+    }
+
+.menu-btn {
+    display: inline-block;
+    text-decoration: none;
+    border: none;
+    padding: 12px 40px;
+    font-size: 1.5rem;
+    background: #646cff;
+    color: white;
+    cursor: pointer;
+    transition: background 0.1s;
+    font-family: inherit;
+    }
+
+.menu-btn:hover {
+    background: #535bf2;
+}
+
+    /* Gameplay Interface Layer Styling Rules */
+.game-screen {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    transition: background-image 0.5s ease-in-out;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    padding-bottom: 40px;
+    box-sizing: border-box;
+}
+
+.interface-container {
+    width: 80%;
+    max-width: 900px;
+    position: relative;
+}
+
+.name-box {
+    position: absolute;
+    top: -45px;
+    left: 20px;
+    padding: 8px 25px;
+    font-size: 1.25rem;
+    font-weight: bold;
+    border: 2px solid #ffffff;
+    border-bottom: none;
+    background-color: #1a1a1a;
+    color: #ffffff;
+}
+
+.text-box {
+    border: 2px solid #ffffff;
+    padding: 25px;
+    min-height: 100px;
+    cursor: pointer;
+    position: relative;
+    background-color: #1a1a1a;
+    color: #ffffff;
+}
+
+.text-box p {
+    margin: 0;
+    font-size: 1.35rem;
+    line-height: 1.6;
+}
+
+.click-hint {
+    position: absolute;
+    bottom: 15px;
+    right: 20px;
+    font-size: 0.8rem;
+    color: #ffffff;
+    animation: blink 1s infinite alternate;
+}
+
+/* Crash Handler Diagnostics Screen Styles */
+.error-card {
+    width: 90%;
+    max-width: 750px;
+    border: 2px solid #ffffff;
+    padding: 30px;
+    background-color: #1a1a1a;
+}
+
+.error-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    border-bottom: 2px solid #ffffff;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+.error-header h1 {  
+    margin: 0;
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+    color: #ffffff;
+}
+
+.error-body {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.info-row {
+    display: flex;
+    gap: 10px;
+    font-size: 1.1rem;
+    color: #ffffff;
+}
+
+.label {
+    font-weight: bold;
+}
+
+.status-code {
+    font-weight: bold;
+}
+
+.highlight {
+    color: #ff0000;
+}
+
+.details-box {
+    margin-top: 10px;
+}
+
+.details-box pre {
+    color: #ffffff;
+    padding: 15px;
+    overflow-x: auto;
+    font-size: 0.9rem;
+    max-height: 250px;
+    border: 1px solid #ffffff;
+    white-space: pre-wrap;
+    background: #000000;
+}
+
+.retry-btn {
+    margin-top: 25px;
+    padding: 10px 25px;
+    background: #ff0000;
+    color: white;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.1s;
+}
+
+.retry-btn:hover {
+    background: #ff7e7e;
+}
+
+@keyframes blink {
+    from { opacity: 0.3; }
+    to { opacity: 1; }
+}
