@@ -1,11 +1,13 @@
 <script>
   import '../app.css';
   import { onMount } from 'svelte';
-  import { PUBLIC_API_URL } from '$env/static/public';
+  import { env } from '$env/dynamic/public';
 
   import ErrorMsg from '$lib/components/ErrorMsg.svelte';
   import GameScreen from '$lib/components/GameScreen.svelte';
   import MainMenu from '$lib/components/MainMenu.svelte';
+
+  const PUBLIC_API_URL = env.PUBLIC_API_URL;
 
   // SPA game screens: 'MENU', 'GAME', 'ERROR'
   let currentScreen = $state('MENU');
@@ -32,8 +34,17 @@
     currentScreen = 'ERROR';
   }
 
-  // Intercept unhandled global frontend exceptions
+  // Intercept unhandled global frontend exceptions and check environment variables
   onMount(() => {
+    // .env existing check.
+    if (!PUBLIC_API_URL) {
+      showError(
+        'ENV_MISSING_ERROR',
+        'The .env file or the PUBLIC_API_URL variable is missing.',
+        'Please ensure that the .env file is created in the frontend root folder and contains the variable: PUBLIC_API_URL=http://BACKEND-URL[:PORT]'
+      );
+    }
+
     const handleRuntimeError = (event) => {
       event.preventDefault(); 
       
@@ -60,6 +71,16 @@
    * Initiates the game session by requesting a new session token from the backend.
    */
   async function startGame() {
+    // Дополнительная проверка перед отправкой запроса, если .env не настроен
+    if (!PUBLIC_API_URL) {
+      showError(
+        'ENV_MISSING_ERROR',
+        'Действие заблокировано: файл .env не настроен.',
+        'Фронтенд не может определить адрес бэкенда. Создайте файл .env в корне проекта.'
+      );
+      return;
+    }
+
     const API_URL = `${PUBLIC_API_URL}/api/game/start`;
     try {
       const response = await fetch(API_URL, { method: 'POST' });
