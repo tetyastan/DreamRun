@@ -25,23 +25,20 @@
 .name-box {
     position: absolute;
     top: -40px;
-    left: 20px;
-    padding: 8px 25px;
+    padding: 10px 35px;
     font-size: 1.25rem;
     font-weight: bold;
-    border: 2px solid #ffffff;
     border-bottom: none;
-    background-color: #1a1a1a;
+    background-color: #000000;
     color: #ffffff;
 }
 
 .text-box {
-    border: 2px solid #ffffff;
     padding: 25px;
     min-height: 100px;
     cursor: pointer;
     position: relative;
-    background-color: #1a1a1a;
+    background-color: #000000;
     color: #ffffff;
     user-select: text;
 }
@@ -76,7 +73,7 @@
 }
 
 .choices-overlay {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
     width: 100%;
@@ -98,18 +95,14 @@
 
 .choice-btn {
     padding: 14px 20px;
-    background-color: #2c2c2e;
+    background-color: #000000;
     color: #ffffff;
-    border: 2px solid #48484a;
-    border-radius: 8px;
     font-size: 16px;
     cursor: pointer;
-    transition: background-color 0.2s, transform 0.1s;
 }
 
 .choice-btn:hover:not(:disabled) {
     background-color: #3a3a3c;
-    transform: scale(1.02);
 }
 
 .choice-btn:disabled {
