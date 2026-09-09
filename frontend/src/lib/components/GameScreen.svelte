@@ -1,57 +1,87 @@
 <script>
     import './GameScreen.css'
-
-    let {
-        currentBg,
-        nextStep,
-        currentSpeaker,
-        currentText,
-    } = $props();
+    import { useGameContext } from '$lib/gameContext.svelte';
+    const game = useGameContext();
 
     let displayedText = $state('');
     let currentIndex = 0;
     let intervalId = null;
-
-    const TEXT_SPEED = 30; 
+    let isAnimating = $state(false);
 
     function startTextAnimation(text) {
-        // Clear the previous timer if there was one.
-        if (intervalId) clearInterval(intervalId);
-        
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+        }
+
         displayedText = '';
         currentIndex = 0;
 
-        if (!text) return;
+        if (!text) {
+            isAnimating = false;
+            return;
+        }
+
+        // If the slider is at the maximum right position (11), skip animation completely
+        if (game.textSpeed === 11) {
+            displayedText = text;
+            currentIndex = text.length;
+            isAnimating = false;
+            return;
+        }
+
+        isAnimating = true;
+
+        // Convert speed steps (1 to 10) into invert milliseconds delays.
+        const calculatedDelay = (11 - game.textSpeed) * 10;
 
         intervalId = setInterval(() => {
             if (currentIndex < text.length) {
                 displayedText += text[currentIndex];
                 currentIndex++;
             } else {
-                clearInterval(intervalId);
-                intervalId = null;
+                clearAnimation();
             }
-        }, TEXT_SPEED);
+        }, calculatedDelay);
     }
 
-    $effect(() => {
-        startTextAnimation(currentText);
-    });
+    function clearAnimation() {
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+        }
+        isAnimating = false;
+    }
 
-    // Checking whether the player attempted to skip the dialogue or select the text.
-    function handleTextClick(e) {
-        // Получаем объект текущего выделения в браузере
+    function finishAnimation() {
+        clearAnimation();
+        // Access currentText from the game context
+        displayedText = game.currentText;
+        currentIndex = game.currentText.length;
+    }
+
+    function handleScreenClick(e) {
+        // Prevent action if the user is highlighting text
         const selection = window.getSelection();
-        
-        // If the selected text is not empty, it means the user is selecting a string.
-        // Abort the function and do NOT call nextStep.
         if (selection && selection.toString().length > 0) {
             return;
         }
 
-        // Если выделения нет — это обычный клик, переходим к следующему шагу
-        nextStep();
+        // Stop the click from traveling down or up unexpectedly
+        e.stopPropagation();
+
+        if (isAnimating) {
+            finishAnimation();
+        } else {
+            // Trigger nextStep from the game context
+            game.nextStep();
+        }
     }
+
+    $effect(() => {
+        // Watch currentText from the game context
+        startTextAnimation(game.currentText);
+    });
 </script>
 
 <main class="container game-container">
@@ -59,27 +89,26 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div 
         class="game-screen" 
-        style="background-image: url('{currentBg || 'placeholder.jpg'}')"
-        onclick={nextStep}
+        style="background-image: url('{game.currentBg || 'placeholder.jpg'}')"
+        onclick={handleScreenClick}
     >
+        <!-- The interface container intercepts clicks to handle layout isolation safely -->
         <div class="interface-container" onclick={(e) => e.stopPropagation()}>
-        <!-- Namebox -->
-        {#if currentSpeaker}
-            <div class="name-box">
-            {currentSpeaker}
-            </div>
-        {/if}
-
-        <!-- Textbox -->
-        <div class="text-box" onclick={handleTextClick}>
-            <!-- Выводим локальную переменную displayedText вместо исходного currentText -->
-            <p>{displayedText}</p>
-            
-            <!-- Стрелочку-подсказку показываем только тогда, когда текст дописан до конца -->
-            {#if !intervalId}
-                <span class="click-hint">▼</span>
+            <!-- Namebox -->
+            {#if game.currentSpeaker}
+                <div class="name-box">
+                    {game.currentSpeaker}
+                </div>
             {/if}
-        </div>
+
+            <!-- Textbox -->
+            <div class="text-box" onclick={handleScreenClick}>
+                <p>{displayedText}</p>
+                
+                {#if !isAnimating}
+                    <span class="click-hint">▼</span>
+                {/if}
+            </div>
         </div>
     </div>
 </main>

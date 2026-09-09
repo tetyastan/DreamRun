@@ -1,0 +1,48 @@
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.4); /* Smooth dimming background overlay */
+    backdrop-filter: blur(2px);
+    z-index: 9999; /* Higher priority than any menu or canvas layout */
+    display: flex;
+    pointer-events: all; /* Block user interactions while loading files */
+    animation: fadeIn 0.1s ease-out forwards;
+}
+
+.loading-content {
+    position: absolute;
+    bottom: 40px;
+    right: 40px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.loading-text {
+    color: #ffffff;
+    font-size: 1.25rem;
+    font-family: inherit;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.loading-spinner {
+    width: 30px;
+    height: 30px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #ffffff; /* solid bright accent for the rotation loop */
+    animation: spin 1.5s linear infinite;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

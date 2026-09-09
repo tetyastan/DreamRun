@@ -1,5 +1,10 @@
-It's a template for your best visual novel on web server.
-Denzel: Some nice text right there!
-Natalya: Like that?
-Denzel: Yep. Like that, Natalya.
-Natalya: Wow!
+[config "my_variables"/]
+
+[bg "/bg.png"/]
+
+:hero: > Some text here! {hero.money}
+
+[python "hero.money = 15000"/]
+
+:hero: > Money now: {hero.money}
+:hero: > Name is {name}.
