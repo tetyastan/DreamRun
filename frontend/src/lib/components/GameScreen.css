@@ -1,0 +1,63 @@
+.game-screen {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    transition: background-image 0.5s ease-in-out;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    padding-bottom: 40px;
+    box-sizing: border-box;
+}
+
+.interface-container {
+    width: 80%;
+    max-width: 900px;
+    position: relative;
+}
+
+.name-box {
+    position: absolute;
+    top: -45px;
+    left: 20px;
+    padding: 8px 25px;
+    font-size: 1.25rem;
+    font-weight: bold;
+    border: 2px solid #ffffff;
+    border-bottom: none;
+    background-color: #1a1a1a;
+    color: #ffffff;
+}
+
+.text-box {
+    border: 2px solid #ffffff;
+    padding: 25px;
+    min-height: 100px;
+    cursor: pointer;
+    position: relative;
+    background-color: #1a1a1a;
+    color: #ffffff;
+}
+
+.text-box p {
+    margin: 0;
+    font-size: 1.35rem;
+    line-height: 1.6;
+}
+
+.click-hint {
+    position: absolute;
+    bottom: 15px;
+    right: 20px;
+    font-size: 0.8rem;
+    color: #ffffff;
+    animation: blink 1s infinite alternate;
+}
+
+@keyframes blink {
+    from { opacity: 0.3; }
+    to { opacity: 1; }
+}

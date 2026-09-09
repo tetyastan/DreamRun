@@ -1,0 +1,77 @@
+.error-card {
+    width: 90%;
+    max-width: 750px;
+    border: 2px solid #000000;
+    padding: 30px;
+}
+
+.error-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    border-bottom: 2px solid #000000;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+.error-header h1 {  
+    margin: 0;
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+}
+
+.error-body {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.info-row {
+    display: flex;
+    gap: 10px;
+    font-size: 1.1rem;
+}
+
+.label {
+    font-weight: bold;
+}
+
+.status-code {
+    font-weight: bold;
+}
+
+.highlight {
+    color: #ff0000;
+}
+
+.details-box {
+    margin-top: 10px;
+}
+
+.details-box pre {
+    color: #ffffff;
+    padding: 15px;
+    overflow-x: auto;
+    font-size: 0.9rem;
+    max-height: 250px;
+    border: 1px solid #ffffff;
+    white-space: pre-wrap;
+    background: #000000;
+}
+
+.retry-btn {
+    margin-top: 25px;
+    padding: 10px 25px;
+    background: #ff0000;
+    color: white;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 18px;
+    transition: background 0.1s;
+}
+
+.retry-btn:hover {
+    background: #ff7e7e;
+}

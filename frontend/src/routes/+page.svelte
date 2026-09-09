@@ -1,6 +1,11 @@
 <script>
   import '../app.css';
+  import { onMount } from 'svelte';
   import { PUBLIC_API_URL } from '$env/static/public';
+
+  import ErrorMsg from '$lib/components/ErrorMsg.svelte';
+  import GameScreen from '$lib/components/GameScreen.svelte';
+  import MainMenu from '$lib/components/MainMenu.svelte';
 
   // SPA game screens: 'MENU', 'GAME', 'ERROR'
   let currentScreen = $state('MENU');
@@ -27,6 +32,30 @@
     currentScreen = 'ERROR';
   }
 
+  // Intercept unhandled global frontend exceptions
+  onMount(() => {
+    const handleRuntimeError = (event) => {
+      event.preventDefault(); 
+      
+      const error = event.error || event.reason;
+      showError(
+        'FRONTEND_RUNTIME_ERROR',
+        error?.message || 'None',
+        error?.stack || 'None'
+      );
+    };
+
+    // Catch standard JS runtime errors
+    window.addEventListener('error', handleRuntimeError);
+    // Catch unhandled promise rejections
+    window.addEventListener('unhandledrejection', handleRuntimeError);
+
+    return () => {
+      window.removeEventListener('error', handleRuntimeError);
+      window.removeEventListener('unhandledrejection', handleRuntimeError);
+    };
+  });
+
   /**
    * Initiates the game session by requesting a new session token from the backend.
    */
@@ -36,8 +65,8 @@
       const response = await fetch(API_URL, { method: 'POST' });
 
       if (!response.ok) {
-        let backendErrorMsg = 'Unknown Backend Error';
-        let backendDetails = '';
+        let backendErrorMsg = 'None';
+        let backendDetails = 'None';
 
         try {
           const errorJson = await response.json();
@@ -121,7 +150,7 @@
       });
 
       if (!response.ok) {
-        let backendErrorMsg = 'Unknown Backend Error';
+        let backendErrorMsg = 'None';
         try {
           const errorJson = await response.json();
           backendErrorMsg = errorJson.detail || JSON.stringify(errorJson);
@@ -151,68 +180,26 @@
 
 <!-- ================= SCREEN 1: MAIN MENU ================= -->
 {#if currentScreen === 'MENU'}
-  <main class="container menu-container">
-    <div class="menu-screen">
-      <h1>DreamRun Template</h1>
-      <button onclick={startGame} class="menu-btn">Start</button>
-    </div>
-  </main>
+  <!-- Fixed: Passed startGame as a normal property function, not a bindable state -->
+  <MainMenu
+    {startGame}
+  />
 
 <!-- ================= SCREEN 2: GAMEPLAY RUNTIME ================= -->
 {:else if currentScreen === 'GAME'}
-  <main class="container game-container">
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-      class="game-screen" 
-      style="background-image: url('{currentBg || 'placeholder.jpg'}')"
-      onclick={nextStep}
-    >
-      <div class="interface-container" onclick={(e) => e.stopPropagation()}>
-        <!-- Namebox -->
-        {#if currentSpeaker}
-          <div class="name-box">
-            {currentSpeaker}
-          </div>
-        {/if}
-
-        <!-- Textbox -->
-        <div class="text-box" onclick={nextStep}>
-          <p>{currentText}</p>
-          <span class="click-hint">▼</span>
-        </div>
-      </div>
-    </div>
-  </main>
+  <!-- Fixed: Removed unnecessary binds for read-only game variables and functions -->
+  <GameScreen
+    {currentBg}
+    {nextStep}
+    {currentSpeaker}
+    {currentText}
+  />
 
 <!-- ================= SCREEN 3: ERROR SYSTEM DIAGNOSTICS ================= -->
 {:else if currentScreen === 'ERROR'}
-  <main class="container error-container">
-    <div class="error-card">
-      <div class="error-header">
-        <h1>Engine error</h1>
-      </div>
-
-      <div class="error-body">
-        <div class="info-row">
-          <span class="label">Status:</span>
-          <span class="status-code">{errorData.status}</span>
-        </div>
-
-        <div class="info-row">
-          <span class="label">Msg:</span>
-          <span class="highlight">{errorData.message}</span>
-        </div>
-
-        <div class="details-box">
-          <span class="label">Stack / Details:</span>
-          <pre>{errorData.details}</pre>
-        </div>
-      </div>
-
-      <div class="error-footer">
-        <button onclick={() => currentScreen = 'MENU'} class="retry-btn">Main Menu</button>
-      </div>
-    </div>
-  </main>
+  <!-- Note: Keeping bind:currentScreen since ErrorMsg safely modifies it via $bindable() -->
+  <ErrorMsg
+    {errorData}
+    bind:currentScreen={currentScreen}
+  />
 {/if}
