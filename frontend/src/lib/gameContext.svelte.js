@@ -5,7 +5,6 @@ class GameState {
     publicApiUrl = env.PUBLIC_API_URL;
 
     currentScreen = $state('MENU');
-
     sessionId = $state('');
     hasNext = $state(false);
 
@@ -13,99 +12,68 @@ class GameState {
     currentSpeaker = $state(null);
     currentText = $state('');
 
+    // Active choices list container placeholder array tracking slots
+    currentChoices = $state([]);
+
     playerVariables = $state({});
     textSpeed = $state(7);
 
-    errorData = $state({
-        status: 'None',
-        message: 'None',
-        details: 'None'
-    });
-
+    errorData = $state({ status: 'None', message: 'None', details: 'None' });
     isAnimating = $state(false);
     isLoading = $state(false);
-
-    // Indicates that the current dialogue can be advanced by the player.
     pendingNextStep = $state(false);
-
-    // Indicates that the game is currently running.
     isGameStarted = $state(false);
-
-    // Dialogues received from the backend in the current prefetch block.
     dialogueQueue = $state([]);
-
-    // Used to invalidate old requests when a new game starts.
     requestGeneration = 0;
 
     constructor() {
         if (typeof window !== 'undefined') {
             const savedSpeed = localStorage.getItem('dreamrun_text_speed');
-
             if (savedSpeed) {
                 this.textSpeed = parseInt(savedSpeed, 10);
             }
-
             $effect.root(() => {
                 $effect(() => {
-                    localStorage.setItem(
-                        'dreamrun_text_speed',
-                        this.textSpeed.toString()
-                    );
+                    localStorage.setItem('dreamrun_text_speed', this.textSpeed.toString());
                 });
             });
         }
     }
 
     getVariable(key, fallback = null) {
-        return this.playerVariables[key] !== undefined
-            ? this.playerVariables[key]
-            : fallback;
+        return this.playerVariables[key] !== undefined ? this.playerVariables[key] : fallback;
     }
 
     showError(status, message, details) {
-        this.errorData = {
-            status,
-            message,
-            details
-        };
-
+        this.errorData = { status, message, details };
         this.currentScreen = 'ERROR';
         this.isLoading = false;
         this.pendingNextStep = false;
         this.isGameStarted = false;
         this.dialogueQueue = [];
+        this.currentChoices = [];
         this.sessionId = '';
     }
 
     async parseAndShowBackendError(response) {
         try {
             const errorJson = await response.json();
-
-            if (
-                errorJson.detail &&
-                typeof errorJson.detail === 'object'
-            ) {
+            if (errorJson.detail && typeof errorJson.detail === 'object') {
                 this.showError(
-                    errorJson.detail.status ||
-                        response.status.toString(),
-
-                    errorJson.detail.message ||
-                        `Backend error: ${response.statusText}`,
-
+                    errorJson.detail.status || response.status.toString(),
+                    errorJson.detail.message || `Backend error: ${response.statusText}`,
                     errorJson.detail.details || 'None'
                 );
             } else {
                 this.showError(
                     response.status.toString(),
                     `Backend error: ${response.statusText}`,
-                    errorJson.detail ||
-                        JSON.stringify(errorJson)
+                    errorJson.detail || JSON.stringify(errorJson)
                 );
             }
         } catch {
             try {
                 const fallbackText = await response.text();
-
                 this.showError(
                     response.status.toString(),
                     `Backend error: ${response.statusText}`,
@@ -121,14 +89,8 @@ class GameState {
         }
     }
 
-    /**
-     * Applies a background path received from the backend.
-     */
     processBackground(bg) {
-        if (!bg) {
-            return;
-        }
-
+        if (!bg) return;
         if (bg.startsWith('/assets')) {
             this.currentBg = `${this.publicApiUrl}${bg}`;
         } else {
@@ -136,20 +98,20 @@ class GameState {
         }
     }
 
-    /**
-     * Displays one dialogue received from the backend.
-     *
-     * Backend now sends plaintext dialogue:
-     *
-     * {
-     *     type: "dialogue",
-     *     name: "Alice",
-     *     text: "Hello!",
-     *     bg: "/assets/background.png"
-     * }
-     */
     processDialogue(dialogue) {
-        if (!dialogue) {
+        if (!dialogue) return;
+
+        if (dialogue.type === 'game_end') {
+            this.handleGameEnd();
+            return;
+        }
+
+        // Catch dynamic choice node interruption block structures early
+        if (dialogue.type === 'choice') {
+            if (dialogue.bg) this.processBackground(dialogue.bg);
+            this.currentChoices = dialogue.options || [];
+            this.pendingNextStep = false; // Block dialogue skipping while choices are visible
+            this.isGameStarted = true;
             return;
         }
 
@@ -159,158 +121,55 @@ class GameState {
 
         this.currentSpeaker = dialogue.name || null;
         this.currentText = dialogue.text || '';
+        this.currentChoices = []; // Clear old choices tracking data lists
 
         this.pendingNextStep = true;
         this.isGameStarted = true;
     }
 
-    /**
-     * Processes a complete prefetch block received from the backend.
-     *
-     * The backend returns:
-     *
-     * {
-     *     "steps": [
-     *         {
-     *             "type": "dialogue",
-     *             "name": "...",
-     *             "text": "...",
-     *             "bg": "..."
-     *         },
-     *         ...
-     *     ]
-     * }
-     *
-     * The first dialogue is displayed immediately.
-     * Remaining dialogues are kept locally and do not require
-     * additional HTTP requests.
-     */
     processBlock(steps) {
         if (!Array.isArray(steps) || steps.length === 0) {
             this.handleGameEnd();
             return;
         }
 
-        const dialogues = steps.filter(
-            step => step && step.type === 'dialogue'
-        );
+        // Intercept inline choice payloads directly from the root batch array node placement
+        if (steps[0] && steps[0].type === 'choice') {
+            this.processDialogue(steps[0]);
+            this.dialogueQueue = [];
+            return;
+        }
 
-        if (dialogues.length === 0) {
+        const filteredNodes = steps.filter(step => step && (step.type === 'dialogue' || step.type === 'choice'));
+        if (filteredNodes.length === 0) {
             this.handleGameEnd();
             return;
         }
 
-        this.dialogueQueue = dialogues.slice(1);
-
-        this.processDialogue(dialogues[0]);
+        this.dialogueQueue = filteredNodes.slice(1);
+        this.processDialogue(filteredNodes[0]);
     }
 
     /**
-     * Resets all runtime state before starting a new game.
+     * Dispatches the player choice branch target directly back onto the authoritative stream.
      */
-    resetGameState() {
-        this.sessionId = '';
-
-        this.currentBg = '';
-        this.currentSpeaker = null;
-        this.currentText = '';
-
-        this.playerVariables = {};
-
-        this.pendingNextStep = false;
-        this.isGameStarted = false;
-
-        this.dialogueQueue = [];
-
-        this.hasNext = false;
-
-        this.errorData = {
-            status: 'None',
-            message: 'None',
-            details: 'None'
-        };
-    }
-
-    /**
-     * Completely terminates the current game.
-     */
-    handleGameEnd() {
-        this.currentScreen = 'MENU';
-
-        this.pendingNextStep = false;
-        this.isGameStarted = false;
-
-        this.currentBg = '';
-        this.currentSpeaker = null;
-        this.currentText = '';
-
-        this.dialogueQueue = [];
-
-        this.sessionId = '';
-        this.hasNext = false;
-    }
-
-    /**
-     * Advances to the next dialogue.
-     *
-     * First consumes the local prefetch queue.
-     * Only when the queue is empty does it request another
-     * block from the backend.
-     */
-    async nextStep() {
-        if (!this.isGameStarted) {
-            return;
-        }
-
-        /*
-         * We already have prefetched dialogues.
-         * No backend request is necessary.
-         */
-        if (this.dialogueQueue.length > 0) {
-            const nextDialogue = this.dialogueQueue.shift();
-
-            this.processDialogue(nextDialogue);
-
-            return;
-        }
-
-        /*
-         * Prevent duplicate backend requests.
-         */
-        if (this.isLoading) {
-            return;
-        }
-
-        if (!this.sessionId) {
-            return;
-        }
-
+    async selectChoice(choiceIndex) {
+        if (this.isLoading) return;
         this.isLoading = true;
-        this.pendingNextStep = false;
 
         const generation = this.requestGeneration;
 
         try {
-            const response = await fetch(
-                `${this.publicApiUrl}/api/game/next`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'X-Session-ID': this.sessionId
-                    }
-                }
-            );
+            const response = await fetch(`${this.publicApiUrl}/api/game/choice`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-ID': this.sessionId
+                },
+                body: JSON.stringify({ choice_index: choiceIndex })
+            });
 
-            /*
-             * A new game may have been started while this request
-             * was still in flight.
-             *
-             * In that case this response belongs to the old game
-             * and must be ignored.
-             */
-            if (generation !== this.requestGeneration) {
-                return;
-            }
+            if (generation !== this.requestGeneration) return;
 
             if (!response.ok) {
                 await this.parseAndShowBackendError(response);
@@ -318,25 +177,90 @@ class GameState {
             }
 
             const data = await response.json();
+            if (data.variables) this.playerVariables = data.variables;
 
-            /*
-             * Backend may update runtime variables after executing
-             * Python/config steps.
-             */
-            if (data.variables) {
-                this.playerVariables = data.variables;
-            }
-
-            /*
-             * The backend now returns a block instead of one step.
-             */
+            this.currentChoices = []; // Reset active choice presentation nodes
             this.processBlock(data.steps);
 
         } catch (err) {
-            if (generation !== this.requestGeneration) {
+            if (generation !== this.requestGeneration) return;
+            this.showError(
+                'CHOICE_SUBMIT_ERROR',
+                'Failed to transmit structural decision index mapping frames.',
+                err?.message || String(err)
+            );
+        } finally {
+            if (generation === this.requestGeneration) {
+                this.isLoading = false;
+            }
+        }
+    }
+
+    resetGameState() {
+        this.sessionId = '';
+        this.currentBg = '';
+        this.currentSpeaker = null;
+        this.currentText = '';
+        this.currentChoices = [];
+        this.playerVariables = {};
+        this.pendingNextStep = false;
+        this.isGameStarted = false;
+        this.dialogueQueue = [];
+        this.hasNext = false;
+        this.errorData = { status: 'None', message: 'None', details: 'None' };
+    }
+
+    handleGameEnd() {
+        this.currentScreen = 'MENU';
+        this.pendingNextStep = false;
+        this.isGameStarted = false;
+        this.currentBg = '';
+        this.currentSpeaker = null;
+        this.currentText = '';
+        this.dialogueQueue = [];
+        this.currentChoices = [];
+        this.sessionId = '';
+        this.hasNext = false;
+    }
+
+    async nextStep() {
+        if (!this.isGameStarted) return;
+        if (this.currentChoices.length > 0) return; // Prevent advancing text manually if choice prompts await input actions
+
+        if (this.dialogueQueue.length > 0) {
+            const nextNode = this.dialogueQueue.shift();
+            this.processDialogue(nextNode);
+            return;
+        }
+
+        if (this.isLoading) return;
+        if (!this.sessionId) return;
+
+        this.isLoading = true;
+        this.pendingNextStep = false;
+
+        const generation = this.requestGeneration;
+
+        try {
+            const response = await fetch(`${this.publicApiUrl}/api/game/next`, {
+                method: 'POST',
+                headers: { 'X-Session-ID': this.sessionId }
+            });
+
+            if (generation !== this.requestGeneration) return;
+
+            if (!response.ok) {
+                await this.parseAndShowBackendError(response);
                 return;
             }
 
+            const data = await response.json();
+            if (data.variables) this.playerVariables = data.variables;
+
+            this.processBlock(data.steps);
+
+        } catch (err) {
+            if (generation !== this.requestGeneration) return;
             this.showError(
                 'GAME_FETCH_ERROR',
                 'Failed to advance sequence frames.',
@@ -349,66 +273,28 @@ class GameState {
         }
     }
 
-    /**
-     * Handles a click on the game screen.
-     *
-     * GameScreen should call this only after text animation
-     * has finished.
-     */
     async handleClick() {
-        if (!this.pendingNextStep) {
-            return;
-        }
-
-        if (this.isLoading) {
-            return;
-        }
-
+        if (this.currentChoices.length > 0) return;
+        if (!this.pendingNextStep) return;
+        if (this.isLoading) return;
         await this.nextStep();
     }
 
-    /**
-     * Starts a completely new game session.
-     */
     async startGame() {
         if (!this.publicApiUrl) {
-            this.showError(
-                'ENV_MISSING_ERROR',
-                'The .env setup configuration is missing.',
-                ''
-            );
-
+            this.showError('ENV_MISSING_ERROR', 'The .env setup configuration is missing.', '');
             return;
         }
 
-        /*
-         * Invalidate all previous asynchronous requests.
-         */
         this.requestGeneration += 1;
-
         const generation = this.requestGeneration;
 
-        /*
-         * Reset old game data before creating a new session.
-         */
         this.resetGameState();
-
         this.isLoading = true;
 
         try {
-            const response = await fetch(
-                `${this.publicApiUrl}/api/game/start`,
-                {
-                    method: 'POST'
-                }
-            );
-
-            /*
-             * Ignore response if another game was started.
-             */
-            if (generation !== this.requestGeneration) {
-                return;
-            }
+            const response = await fetch(`${this.publicApiUrl}/api/game/start`, { method: 'POST' });
+            if (generation !== this.requestGeneration) return;
 
             if (!response.ok) {
                 await this.parseAndShowBackendError(response);
@@ -416,38 +302,15 @@ class GameState {
             }
 
             const data = await response.json();
-
-            /*
-             * Store the newly created backend session.
-             */
             this.sessionId = data.session_id;
-
-            /*
-             * Load initial runtime variables.
-             */
             this.playerVariables = data.variables || {};
-
-            /*
-             * Switch to the game screen before displaying
-             * the first dialogue.
-             */
             this.currentScreen = 'GAME';
 
-            /*
-             * Backend returns "steps", not "step".
-             */
             this.processBlock(data.steps);
 
         } catch (err) {
-            if (generation !== this.requestGeneration) {
-                return;
-            }
-
-            this.showError(
-                'FETCH_ERROR',
-                'Backend connection error.',
-                err?.message || String(err)
-            );
+            if (generation !== this.requestGeneration) return;
+            this.showError('FETCH_ERROR', 'Backend connection error.', err?.message || String(err));
         } finally {
             if (generation === this.requestGeneration) {
                 this.isLoading = false;
@@ -459,10 +322,7 @@ class GameState {
 const GAME_CONTEXT_KEY = Symbol('GAME_CONTEXT');
 
 export function initGameContext() {
-    return setContext(
-        GAME_CONTEXT_KEY,
-        new GameState()
-    );
+    return setContext(GAME_CONTEXT_KEY, new GameState());
 }
 
 export function useGameContext() {

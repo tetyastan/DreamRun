@@ -1,6 +1,7 @@
 <script>
     import './GameScreen.css'
     import { useGameContext } from '$lib/gameContext.svelte';
+    import { onDestroy } from 'svelte';
     const game = useGameContext();
 
     let displayedText = $state('');
@@ -9,16 +10,19 @@
     let isAnimating = $state(false);
 
     function startTextAnimation(text) {
+        // Clear any existing animation
         if (intervalId) {
             clearInterval(intervalId);
             intervalId = null;
         }
 
+        // Reset display state
         displayedText = '';
         currentIndex = 0;
+        isAnimating = false;
 
+        // If no text, just return
         if (!text) {
-            isAnimating = false;
             return;
         }
 
@@ -30,9 +34,11 @@
             return;
         }
 
+        // Start the animation
         isAnimating = true;
 
-        // Convert speed steps (1 to 10) into invert milliseconds delays.
+        // Convert speed steps (1 to 10) into milliseconds delays.
+        // Speed 1 = 100ms per character, Speed 10 = 10ms per character
         const calculatedDelay = (11 - game.textSpeed) * 10;
 
         intervalId = setInterval(() => {
@@ -55,7 +61,6 @@
 
     function finishAnimation() {
         clearAnimation();
-        // Access currentText from the game context
         displayedText = game.currentText;
         currentIndex = game.currentText.length;
     }
@@ -71,16 +76,28 @@
         e.stopPropagation();
 
         if (isAnimating) {
+            // If animation is playing, finish it immediately
             finishAnimation();
+        } else if (game.pendingNextStep) {
+            // Advance game state safely using centralized context call
+            game.handleClick();
         } else {
-            // Trigger nextStep from the game context
+            // Fallback strategy to push stream
             game.nextStep();
         }
     }
 
+    // Svelte 5 native reactive tracking directly on currentText
     $effect(() => {
-        // Watch currentText from the game context
         startTextAnimation(game.currentText);
+    });
+
+    // Clean up interval on component destroy
+    onDestroy(() => {
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+        }
     });
 </script>
 
@@ -105,10 +122,27 @@
             <div class="text-box" onclick={handleScreenClick}>
                 <p>{displayedText}</p>
                 
-                {#if !isAnimating}
+                <!-- Only show click hint if animation is complete AND there's dialogue to advance -->
+                {#if !isAnimating && game.currentText && game.pendingNextStep}
                     <span class="click-hint">▼</span>
                 {/if}
             </div>
+
+            {#if game.currentChoices && game.currentChoices.length > 0}
+                <div class="choices-overlay" onclick={(e) => e.stopPropagation()}>
+                    <div class="choices-container">
+                        {#each game.currentChoices as choice}
+                            <button 
+                                onclick={() => game.selectChoice(choice.index)} 
+                                class="choice-btn"
+                                disabled={game.isLoading}
+                            >
+                                {choice.text}
+                            </button>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
         </div>
     </div>
 </main>

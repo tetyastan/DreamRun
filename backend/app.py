@@ -1,30 +1,19 @@
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 import importlib.util
 import os
 import re
 import uuid
+import time
+import traceback
 
-# Import Character class from the engine core.
-#
-# :hero: > "Hello!"
-#
-# If hero contains a Character instance, its .name is shown to the player.
 from core import Character
-
 
 app = FastAPI()
 
-
-# CORS
-# The frontend and backend may run on different origins during development.
-#
-# CORS allows the browser to make requests between these origins.
-#
-# For production, allow_origins should ideally contain only the real
-# frontend origin instead of "*".
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,243 +22,82 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ENGINE PATHS AND GLOBAL SETTINGS
-
-# Directory containing .dreamrun scenario files.
 SCENARIOS_DIR = os.path.join(os.path.dirname(__file__), "acts")
-
-# Directory containing Python configuration files used by scenarios.
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config")
-
-# Directory containing images and other public game assets.
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
-
-# The entry-point scenario loaded when a new game session starts.
 INDEX_ACT = "index.dreamrun"
-
-# Global variables are loaded into every new game session before the first
-# scenario instruction is executed.
 DEFAULT_VARS_FILE = os.path.join(CONFIG_DIR, "--vars.py")
-
-# If True, dialogue text such as:
-#
-# Alice > "Hello"
-#
-# becomes:
-#
-# Hello
-#
-# The outer quotation marks are treated as script syntax rather than
-# displaying them as part of the dialogue.
 REMOVE_QUOTATION_MARKS = True
 
-
-# PREFETCH CONFIGURATION
-# The backend does not send the complete scenario to the browser.
-#
-# Instead, execute_runtime() executes the scenario on the server and collects
-# only a limited number of upcoming dialogues.
-#
-# Example with PREFETCH_COUNT = 3:
-#
-#     Request #1 -> dialogue 1, dialogue 2, dialogue 3
-#     Request #2 -> dialogue 4, dialogue 5, dialogue 6
-#     Request #3 -> dialogue 7, dialogue 8, dialogue 9
-#
-# The browser keeps the received dialogues in a local queue and does not need
-# another HTTP request for every click.
-#
-# This is NOT encryption and is not intended to be encryption.
-# Its purpose is to avoid sending the entire future scenario to the client.
 PREFETCH_COUNT = 3
 
-
-# DIRECTORY INITIALIZATION
-#
-# Creating these directories here makes the backend capable of starting on a
-# clean installation where the directories have not yet been created.
 os.makedirs(ASSETS_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(SCENARIOS_DIR, exist_ok=True)
 
-
-# Assets are intentionally exposed as static files because the frontend needs
-# to load backgrounds and other public resources.
-#
-# IMPORTANT:
-# Anything exposed through /assets is public to the client. Therefore,
-# future story text should never be treated as protected merely because its
-# corresponding image is stored here.
 app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
-
-# ACTIVE GAME SESSIONS
-# Each running game receives its own session ID.
-#
-# Current structure:
-#
-#     SESSIONS[session_id] = {
-#         "current_act": "...",
-#         "cached_steps": [...],
-#         "step_index": 0,
-#         "next_act_path": "...",
-#         "runtime_env": {...}
-#     }
-#
-# This dictionary is intentionally simple for the current local/small-server
-# implementation.
-#
-# For a production multiplayer deployment, this should eventually be replaced
-# with persistent/session-aware storage such as Redis or a database.
 SESSIONS = {}
- 
 
-# DIALOGUE TEXT CLEANING
+
+class ChoiceSelection(BaseModel):
+    choice_index: int
+
 
 def clean_dialogue_text(text: str) -> str:
-    """
-    Removes optional matching quotation marks surrounding dialogue text.
-
-    Example:
-
-        > "Hello!"
-
-    becomes:
-
-        Hello!
-
-    This only removes a pair of quotation marks when they are both at the
-    beginning and at the end of the complete dialogue string.
-    """
-
+    """Removes optional matching quotation marks surrounding dialogue text."""
     text = text.strip()
-
     if REMOVE_QUOTATION_MARKS:
         if (
-            (text.startswith('"') and text.endswith('"'))
-            or
+            (text.startswith('"') and text.endswith('"')) or
             (text.startswith("'") and text.endswith("'"))
         ):
             return text[1:-1].strip()
-
     return text
 
 
-# PYTHON CONFIGURATION LOADER
-
 def load_py_config(file_path: str, environment: dict) -> bool:
-    """
-    Loads a Python configuration file into a scenario runtime environment.
-
-    Configuration files are ordinary Python files. Their public variables are
-    copied into the supplied environment dictionary.
-
-    Example config:
-
-        hero = Character("Alice")
-        
-        some_value = 10
-
-    After loading:
-
-        environment["hero"]      -> Character("Alice")
-        
-        environment["some_value"] -> 10
-
-    Names beginning with "__" are ignored because they are Python module
-    internals.
-
-    Character is deliberately not overwritten because the engine provides its
-    own Character class to the runtime.
-    """
-
+    """Loads a Python configuration file into a scenario runtime environment."""
     if not os.path.exists(file_path):
         return False
-
     try:
-        # A unique module name prevents different dynamic configuration files
-        # from accidentally sharing the same import-cache entry.
         module_name = f"dynamic_config_{uuid.uuid4().hex}"
-
-        # Build a Python import specification directly from the physical file.
-        spec = importlib.util.spec_from_file_location(
-            module_name,
-            file_path
-        )
-
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
         if spec is None or spec.loader is None:
-            raise Exception(
-                f"Unable to create import specification for '{file_path}'."
-            )
-
-        # Create a module object from the specification.
+            raise Exception(f"Unable to create import specification for '{file_path}'.")
         module = importlib.util.module_from_spec(spec)
-
-        # Execute the configuration file.
         spec.loader.exec_module(module)
-
-        # Copy public configuration values into the session runtime.
         for key, value in module.__dict__.items():
             if not key.startswith("__") and key != "Character":
                 environment[key] = value
-
         return True
-
     except Exception as e:
-        raise Exception(str(e))
+        raise e
 
-
-# DREAMRUN FORMAT SCRIPT PARSER
 
 def parse_dreamrun_blocks(file_path: str):
     """
-    Parses a .dreamrun scenario file into an ordered list of runtime steps.
-
-    Supported instructions currently include:
-
-        [python]
-        
-        ...
-        
-        [/python]
-
-        [python "code"/]
-
-        [bg "path"/]
-
-        [config "filename"/]
-
-        [next "another_act.dreamrun"/]
-
-        :variable: > "Dialogue"
-
-        Character Name > "Dialogue"
-
-        > "Narrator dialogue"
-
-    The parser does NOT execute Python code.
-
-    It only converts the textual script into structured instructions.
-    Actual execution happens later inside execute_runtime().
+    Parses a .dreamrun scenario file. 
+    Isolates [ref] blocks completely so they are skipped in linear execution 
+    and can only be accessed via explicit [jump] instructions.
     """
-
     if not os.path.exists(file_path):
         return None
 
-    steps = []
+    main_steps = []
     next_act = None
+    references_map = {}
 
     with open(file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     in_python_block = False
     python_block_accumulator = []
+    scope_stack = []
 
-    for line in lines:
+    for line_idx, line in enumerate(lines):
         stripped = line.strip()
 
-        # Multi-line Python block
         if stripped == "[python]":
             in_python_block = True
             python_block_accumulator = []
@@ -277,581 +105,582 @@ def parse_dreamrun_blocks(file_path: str):
 
         if stripped == "[/python]":
             in_python_block = False
-
-            full_code = "\n".join(python_block_accumulator)
-
-            steps.append({
-                "type": "python_exec",
-                "code": full_code
-            })
-
+            target_step = {"type": "python_exec", "code": "\n".join(python_block_accumulator)}
+            
+            # Route step based on whether we are inside a reference or an answer branch
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
             continue
 
-        # While inside [python] ... [/python], every line belongs to Python.
         if in_python_block:
             python_block_accumulator.append(line.rstrip("\r\n"))
             continue
 
-        # Empty lines and comments do not produce runtime instructions.
         if not stripped or stripped.startswith("#"):
             continue
 
-        # Next act
-        # Supported:
-        #
-        #     [next "act2.dreamrun"]
-        #     [next "act2.dreamrun"/]
-        #
-        # The path is stored in the current act and is loaded only when the
-        # current act has been completely consumed.
-        next_match = re.match(
-            r'^\[next\s+"(.*)"\s*/?\]$',
-            stripped
-        )
+        # --- 1. PASS TAG ---
+        if stripped == "[pass/]":
+            target_step = {"type": "pass"}
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
+            continue
 
+        # --- 2. NEXT ACT TAG ---
+        next_match = re.match(r'^\[next\s+"(.*)"\s*/?\]$', stripped)
         if next_match:
             next_act = next_match.group(1).strip()
             continue
 
-        # Single-line Python
-        single_py_match = re.match(
-            r'^\[python\s+"(.*)"\s*/\]$',
-            stripped
-        )
-
-        if single_py_match:
-            steps.append({
-                "type": "python_exec",
-                "code": single_py_match.group(1)
-            })
-
+        # --- 3. JUMP REF TAG ---
+        jump_match = re.match(r'^\[jump\s+"(.*)"\s*/?\]$', stripped)
+        if jump_match:
+            target_step = {"type": "jump", "target": jump_match.group(1).strip()}
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
             continue
 
-        # Background
-        bg_match = re.match(
-            r'^\[bg\s+"(.*)"\s*/?\]$',
-            stripped
-        )
+        # --- 4. INLINE PYTHON TAG ---
+        single_py_match = re.match(r'^\[python\s+"(.*)"\s*/?\]$', stripped)
+        if single_py_match:
+            target_step = {"type": "python_exec", "code": single_py_match.group(1)}
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
+            continue
 
+        # --- 5. BACKGROUND TAG ---
+        bg_match = re.match(r'^\[bg\s+"(.*)"\s*/?\]$', stripped)
         if bg_match:
             bg_target = bg_match.group(1).strip()
-
-            # A leading slash means the path is relative to the public assets
-            # directory. Internally the API represents such paths as
-            # /assets/...
             if bg_target.startswith("/"):
                 bg_target = f"/assets{bg_target}"
-
-            steps.append({
-                "type": "bg",
-                "value": bg_target
-            })
-
+            target_step = {"type": "bg", "value": bg_target}
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
             continue
 
-        # Python configuration import
-        cfg_match = re.match(
-            r'^\[config\s+"(.*)"\s*/?\]$',
-            stripped
-        )
-
+        # --- 6. CONFIGURATION IMPORT TAG ---
+        cfg_match = re.match(r'^\[config\s+"(.*)"\s*/?\]$', stripped)
         if cfg_match:
             filename = cfg_match.group(1).strip()
-
             if not filename.endswith(".py"):
                 filename = f"{filename}.py"
-
-            steps.append({
-                "type": "cfg_import",
-                "filename": filename
-            })
-
+            target_step = {"type": "cfg_import", "filename": filename}
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
             continue
 
-        # Variable speaker
-        # Example:
-        #
-        #     :hero: > "Hello!"
-        #
-        # The actual speaker name is resolved at runtime because the variable
-        # may have been changed by Python code before this dialogue.
-        var_char_match = re.match(
-            r'^:([a-zA-Z_][a-zA-Z0-9_]*):\s*>\s*(.*)$',
-            stripped
-        )
+        # --- 7. REFERENCE BLOCK TAGS ---
+        ref_open_match = re.match(r'^\[ref\s+"(.*)"\]$', stripped)
+        if ref_open_match:
+            if any(s["type"] == "ref" for s in scope_stack):
+                raise ValueError(f"Syntax Error line {line_idx}: Nested [ref] blocks are strictly forbidden.")
+            
+            ref_name = ref_open_match.group(1).strip()
+            scope_stack.append({
+                "type": "ref",
+                "name": ref_name,
+                "steps": []  # Collect steps into an isolated bucket
+            })
+            continue
 
+        if stripped == "[/ref]":
+            if not scope_stack or scope_stack[-1]["type"] != "ref":
+                raise ValueError(f"Syntax Error line {line_idx}: Mismatched closed tag [/ref].")
+            
+            ref_meta = scope_stack.pop()
+            if not ref_meta["steps"]:
+                raise ValueError(f"Syntax Error: Reference block '{ref_meta['name']}' cannot be empty.")
+            
+            # Map the reference name directly to its isolated execution queue
+            references_map[ref_meta["name"]] = ref_meta["steps"]
+            continue
+
+        # --- 8. CHOICE BLOCK TAGS ---
+        if stripped == "[choice]":
+            if scope_stack and scope_stack[-1]["type"] == "ref":
+                raise ValueError(f"Syntax Error line {line_idx}: [choice] cannot be nested inside a reference block directly.")
+            scope_stack.append({"type": "choice", "answers": []})
+            continue
+
+        if stripped == "[/choice]":
+            if not scope_stack or scope_stack[-1]["type"] != "choice":
+                raise ValueError(f"Syntax Error line {line_idx}: Mismatched closed tag [/choice].")
+            
+            choice_meta = scope_stack.pop()
+            target_step = {
+                "type": "choice",
+                "options": choice_meta["answers"]
+            }
+            
+            if scope_stack and scope_stack[-1]["type"] == "answer_paired":
+                scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
+            continue
+
+        # --- 9. ANSWER TAGS ---
+        answer_self_match = re.match(r'^\[answer\s+"([^"]+)"\s+"([^"]+)"\s*/?\]$', stripped)
+        if answer_self_match:
+            if not scope_stack or scope_stack[-1]["type"] != "choice":
+                raise ValueError(f"Syntax Error line {line_idx}: [answer] tags require an open [choice] parent block.")
+            
+            ans_text = answer_self_match.group(1).strip()
+            ans_inline_payload = answer_self_match.group(2).strip()
+            
+            payload_step = None
+            if ans_inline_payload.startswith("[") and ans_inline_payload.endswith("]"):
+                if "[bg" in ans_inline_payload:
+                    m = re.match(r'^\[bg\s+"(.*)"\s*/?\]$', ans_inline_payload)
+                    if m:
+                        bg_val = m.group(1).strip()
+                        payload_step = {"type": "bg", "value": f"/assets{bg_val}" if bg_val.startswith("/") else bg_val}
+                elif "[python" in ans_inline_payload:
+                    m = re.match(r'^\[python\s+"(.*)"\s*/?\]$', ans_inline_payload)
+                    if m:
+                        payload_step = {"type": "python_exec", "code": m.group(1)}
+                elif "[config" in ans_inline_payload:
+                    m = re.match(r'^\[config\s+"(.*)"\s*/?\]$', ans_inline_payload)
+                    if m:
+                        filename = m.group(1)
+                        payload_step = {"type": "cfg_import", "filename": filename if filename.endswith(".py") else f"{filename}.py"}
+                elif "[jump" in ans_inline_payload:
+                    m = re.match(r'^\[jump\s+"(.*)"\s*/?\]$', ans_inline_payload)
+                    if m:
+                        payload_step = {"type": "jump", "target": m.group(1).strip()}
+                elif "[pass" in ans_inline_payload:
+                    payload_step = {"type": "pass"}
+            else:
+                payload_step = {"type": "dialogue", "speaker_mode": "narrator", "text": clean_dialogue_text(ans_inline_payload)}
+            
+            if not payload_step:
+                raise ValueError(f"Syntax Error line {line_idx}: Invalid content structure inside answer.")
+            
+            scope_stack[-1]["answers"].append({
+                "text": ans_text,
+                "type": "self_closing",
+                "action": payload_step
+            })
+            continue
+
+        answer_paired_match = re.match(r'^\[answer\s+"([^"]+)"\]$', stripped)
+        if answer_paired_match:
+            if not scope_stack or scope_stack[-1]["type"] != "choice":
+                raise ValueError(f"Syntax Error line {line_idx}: [answer] tags require an open [choice] parent block.")
+            
+            ans_text = answer_paired_match.group(1).strip()
+            scope_stack.append({"type": "answer_paired", "text": ans_text, "children": []})
+            continue
+
+        if stripped == "[/answer]":
+            if not scope_stack or scope_stack[-1]["type"] != "answer_paired":
+                raise ValueError(f"Syntax Error line {line_idx}: Mismatched closed tag [/answer].")
+            
+            paired_meta = scope_stack.pop()
+            if scope_stack and scope_stack[-1]["type"] == "choice":
+                scope_stack[-1]["answers"].append({
+                    "text": paired_meta["text"],
+                    "type": "paired",
+                    "branches": paired_meta["children"]
+                })
+            continue
+
+        # --- 10. DIALOGUE TEXT TAG PROCESSING LINES ---
+        var_char_match = re.match(r'^:([a-zA-Z_][a-zA-Z0-9_]*):\s*>\s*(.*)$', stripped)
         if var_char_match:
-            steps.append({
+            target_step = {
                 "type": "dialogue",
                 "speaker_mode": "variable",
                 "key": var_char_match.group(1),
-                "text": clean_dialogue_text(
-                    var_char_match.group(2)
-                )
-            })
-
+                "text": clean_dialogue_text(var_char_match.group(2))
+            }
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
             continue
 
-        # Literal speaker
-        # Example:
-        #
-        #     Alice > "Hello!"
-        #
-        # The speaker is stored directly in the parsed instruction.
-        raw_char_match = re.match(
-            r'^([^>]+)>\s*(.*)$',
-            stripped
-        )
-
+        raw_char_match = re.match(r'^([^>]+)>\s*(.*)$', stripped)
         if raw_char_match and not stripped.startswith(">"):
-            steps.append({
+            target_step = {
                 "type": "dialogue",
                 "speaker_mode": "literal",
                 "name": raw_char_match.group(1).strip(),
-                "text": clean_dialogue_text(
-                    raw_char_match.group(2)
-                )
-            })
-
+                "text": clean_dialogue_text(raw_char_match.group(2))
+            }
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
             continue
 
-        # Narrator
-        # Example:
-        #
-        # > "The room became silent."
-        #
-        # Narrator dialogues do not have a speaker name.
         if stripped.startswith(">"):
-            narrator_text = stripped[1:].strip()
-
-            steps.append({
+            target_step = {
                 "type": "dialogue",
                 "speaker_mode": "narrator",
-                "text": clean_dialogue_text(narrator_text)
-            })
-
+                "text": clean_dialogue_text(stripped[1:].strip())
+            }
+            if scope_stack:
+                if scope_stack[-1]["type"] == "ref":
+                    scope_stack[-1]["steps"].append(target_step)
+                elif scope_stack[-1]["type"] == "answer_paired":
+                    scope_stack[-1]["children"].append(target_step)
+            else:
+                main_steps.append(target_step)
             continue
 
-    return {
-        "steps": steps,
-        "next_act": next_act
-    }
+        raise ValueError(f"Engine Compilation Exception at line {line_idx + 1}: Unrecognized syntax expression context token: '{stripped}'")
+
+    if scope_stack:
+        raise ValueError(f"Syntax Error: Unclosed tags remaining: {[s['type'] for s in scope_stack]}")
+
+    return {"steps": main_steps, "next_act": next_act, "references": references_map}
 
 
-# SERVER-SIDE RUNTIME + PREFETCH
-
-def execute_runtime(
-    session_id: str,
-    max_dialogues: int = PREFETCH_COUNT
-) -> list:
-    """
-    Executes the current scenario runtime and returns a limited block of
-    upcoming dialogues.
-    This is the central part of the prefetch system.
-
-    The function continues through technical instructions until it has
-    collected max_dialogues dialogue entries.
-
-    Background changes are attached to the next dialogue:
-
-        [bg "/room.png"]
-        Alice > "Hello"
-
-    becomes approximately:
-
-        {
-            "type": "dialogue",
-            "name": "Alice",
-            "text": "Hello",
-            "bg": "/assets/room.png"
-        }
-    """
-
+def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> list:
+    """Processes server-side scenario execution pipelines using subroutine stack frames."""
     session = SESSIONS[session_id]
     env = session["runtime_env"]
-
     dialogues = []
-
-    # Stores a background encountered before the next dialogue.
     pending_bg = None
 
     while len(dialogues) < max_dialogues:
-
-        # Current act exhausted
+        # Check if the CURRENT execution track is exhausted
         if session["step_index"] >= len(session["cached_steps"]):
+            # SUBROUTINE RETURN: Check if we are currently inside a reference block and need to go home
+            if session["return_stack"]:
+                frame = session["return_stack"].pop()
+                session["cached_steps"] = frame["steps"]
+                session["step_index"] = frame["index"]
+                continue
 
-            # If another act exists, load it and continue collecting dialogues.
+            # If the main act track is exhausted, try loading the next act file
             if session["next_act_path"]:
-                next_file = os.path.join(
-                    SCENARIOS_DIR,
-                    os.path.basename(session["next_act_path"])
-                )
-
+                next_file = os.path.join(SCENARIOS_DIR, os.path.basename(session["next_act_path"]))
                 data = parse_dreamrun_blocks(next_file)
 
                 if not data:
                     raise HTTPException(
                         status_code=404,
-                        detail={
-                            "status": "CHAPTER_MISSING_ERROR",
-                            "message": (
-                                f"Next act chapter script file "
-                                f"'{next_file}' not found."
-                            ),
-                            "details": (
-                                "Verify your scripts references point "
-                                "to an existing act file."
-                            )
-                        }
+                        detail={"status": "CHAPTER_MISSING_ERROR", "message": "Next act file not found."}
                     )
 
-                # Replace the current act with the next one.
                 session["current_act"] = next_file
                 session["cached_steps"] = data["steps"]
                 session["step_index"] = 0
                 session["next_act_path"] = data["next_act"]
-
-                # Continue the same prefetch operation. This means a single
-                # request may cross an act boundary if necessary to collect
-                # the requested number of dialogues.
+                session["references"] = data["references"]
                 continue
-
-            # No next act exists, so there is nothing more to execute.
             break
 
-        # Get the next instruction and immediately move the session pointer.
-        #
-        # Advancing step_index before execution is important because the
-        # runtime must remember exactly where it stopped if the request ends.
         step = session["cached_steps"][session["step_index"]]
+
+        if step["type"] == "choice":
+            options_payload = []
+            for idx, opt in enumerate(step["options"]):
+                options_payload.append({"index": idx, "text": opt["text"]})
+            
+            dialogues.append({
+                "type": "choice",
+                "bg": pending_bg,
+                "options": options_payload
+            })
+            break
+
         session["step_index"] += 1
 
-        # Python execution
+        if step["type"] == "pass":
+            continue
+
+        # --- JUMP CALL (Pushes current execution trace onto the stack frame) ---
+        if step["type"] == "jump":
+            target_ref = step["target"]
+            if target_ref not in session["references"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "status": "REFERENCE_NOT_FOUND",
+                        "message": f"Reference tracking key '{target_ref}' missing."
+                    }
+                )
+
+            # Save the active step sequence grid and the next pointer state
+            session["return_stack"].append({
+                "steps": session["cached_steps"],
+                "index": session["step_index"]
+            })
+
+            # Hot-swap runtime steps onto the isolated subroutine reference array block
+            session["cached_steps"] = session["references"][target_ref]
+            session["step_index"] = 0
+            continue
+
         if step["type"] == "python_exec":
             try:
-                # Scenario Python executes inside the session environment.
-                #
-                # The environment contains Character and variables loaded
-                # from configuration files or previous Python blocks.
                 exec(step["code"], {}, env)
-
             except Exception as e:
+                error_trace = traceback.format_exc()
                 raise HTTPException(
                     status_code=422,
                     detail={
                         "status": "SCRIPT_RUNTIME_ERROR",
-                        "message": (
-                            "Failed to execute Python block expression "
-                            "structural context."
-                        ),
-                        "details": (
-                            f"Interpreter Exception Trace: {str(e)}"
-                        )
+                        "message": "Python step failed.",
+                        "details": f"Code:\n{step['code']}\n\nTrace:\n{error_trace}"
                     }
                 )
-
-            # Python instructions are server-side implementation details.
-            # They are never sent to the browser.
             continue
 
-        # Configuration import
         elif step["type"] == "cfg_import":
-            cfg_path = os.path.join(
-                CONFIG_DIR,
-                step["filename"]
-            )
-
+            cfg_path = os.path.join(CONFIG_DIR, step["filename"])
             if not os.path.exists(cfg_path):
                 raise HTTPException(
                     status_code=404,
-                    detail={
-                        "status": "CONFIG_MISSING_ERROR",
-                        "message": (
-                            "Required configuration tracker asset "
-                            f"'{step['filename']}' could not be located."
-                        ),
-                        "details": (
-                            f"Expected target location map: {cfg_path}"
-                        )
-                    }
+                    detail={"status": "CONFIG_MISSING_ERROR", "message": f"Asset missing: {step['filename']}"}
                 )
-
             try:
                 load_py_config(cfg_path, env)
-
             except Exception as e:
+                error_trace = traceback.format_exc()
                 raise HTTPException(
                     status_code=422,
                     detail={
                         "status": "CONFIG_PARSE_ERROR",
-                        "message": (
-                            "Syntax error compilation failure within "
-                            f"config file reference: {step['filename']}"
-                        ),
-                        "details": f"Exception Message: {str(e)}"
+                        "message": "Syntax compilation failure.",
+                        "details": str(error_trace)
                     }
                 )
-
-            # Configuration instructions are also server-side only.
             continue
 
-        # Background
         elif step["type"] == "bg":
-            # Do not immediately return a separate background instruction.
-            # Instead attach the background to the next dialogue.
             pending_bg = step["value"]
             continue
 
-        # Dialogue
         elif step["type"] == "dialogue":
-
             name = None
-
-            # Resolve variable speakers at runtime.
             if step["speaker_mode"] == "variable":
                 var_key = step["key"]
-
-                if (
-                    var_key in env
-                    and isinstance(env[var_key], Character)
-                ):
+                if var_key in env and isinstance(env[var_key], Character):
                     name = env[var_key].name
                 else:
-                    # If the variable does not contain a Character,
-                    # preserve the variable key as a fallback speaker name.
                     name = var_key
-
-            # Literal speaker names require no runtime lookup.
             elif step["speaker_mode"] == "literal":
                 name = step["name"]
 
             text = step["text"]
-
-            # Runtime variable formatting
-            # Example script:
-            #
-            # :hero: > "I have {gold} coins."
-            #
-            # If env["gold"] == 100, the resulting dialogue becomes:
-            #
-            # I have 100 coins.
-            #
-            # Formatting happens on the server before the dialogue is sent.
-            # This keeps the scenario runtime logic on the backend.
             if text:
                 try:
-                    formatting_map = {
-                        key: value
-                        for key, value in env.items()
-                    }
-
+                    formatting_map = {key: value for key, value in env.items()}
                     text = text.format(**formatting_map)
-
                 except Exception:
-                    # Preserve the original text if formatting fails.
-                    #
-                    # This matches the previous engine behavior and prevents
-                    # one formatting mistake from destroying the whole scene.
                     pass
 
-            # Public dialogue payload
-            #
-            # The frontend receives exactly the text it needs to display.
-            # Future dialogues remain on the server until a later prefetch
-            # request asks for them.
             dialogues.append({
                 "type": "dialogue",
                 "name": name,
                 "text": text,
                 "bg": pending_bg
             })
-
-            # The background has now been consumed by this dialogue.
             pending_bg = None
-
             continue
 
     return dialogues
 
 
-# START GAME
 @app.post("/api/game/start")
-def start_game():
-    """
-    Creates a completely new game session.
-
-    The first request does not return the complete scenario.
-
-    Instead, a unique session identifier of the player is
-    generated first, the script is loaded, global variables
-    are initialized, and the runtime environment is executed until
-    the number of dialogues equal to PREFETCH_COUNT is collected.
-    """
-
-    # Every start creates a new isolated runtime.
+async def start_game():
     session_id = str(uuid.uuid4())
+    first_act = os.path.join(SCENARIOS_DIR, INDEX_ACT)
 
-    first_act = os.path.join(
-        SCENARIOS_DIR,
-        INDEX_ACT
-    )
-
-    data = parse_dreamrun_blocks(first_act)
+    try:
+        data = parse_dreamrun_blocks(first_act)
+    except Exception as parse_err:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "SYNTAX_COMPILATION_ERROR",
+                "message": "Scenario script file contains syntax errors.",
+                "details": str(parse_err)
+            }
+        )
 
     if not data:
         raise HTTPException(
             status_code=404,
-            detail={
-                "status": "ACT_MISSING_ERROR",
-                "message": (
-                    f"Act script tracker target file "
-                    f"'{INDEX_ACT}' not found."
-                ),
-                "details": (
-                    f"Target resolution location path: {first_act}"
-                )
-            }
+            detail={"status": "ACT_MISSING_ERROR", "message": f"Entry file '{INDEX_ACT}' missing."}
         )
 
-    # Create the session before loading the global variables because the
-    # runtime environment belongs specifically to this session.
     SESSIONS[session_id] = {
         "current_act": first_act,
         "cached_steps": data["steps"],
         "step_index": 0,
         "next_act_path": data["next_act"],
-        "runtime_env": {
-            "Character": Character
-        }
+        "runtime_env": {"Character": Character},
+        "references": data["references"],
+        "return_stack": [],
+        "last_request_time": 0
     }
 
-    # Every game requires the global variable configuration.
     if not os.path.exists(DEFAULT_VARS_FILE):
-        # Remove the incomplete session so it cannot remain in memory.
         SESSIONS.pop(session_id, None)
-
         raise HTTPException(
             status_code=500,
-            detail={
-                "status": "CORE_CONFIG_MISSING",
-                "message": (
-                    "The application core initialization variables "
-                    "configuration file is missing."
-                ),
-                "details": (
-                    "Please verify presence under path target location "
-                    f"layout: {DEFAULT_VARS_FILE}"
-                )
-            }
+            detail={"status": "CORE_CONFIG_MISSING", "message": "Global baseline system config is missing."}
         )
 
     try:
-        # Load baseline variables before executing the first scenario step.
-        load_py_config(
-            DEFAULT_VARS_FILE,
-            SESSIONS[session_id]["runtime_env"]
-        )
-
+        load_py_config(DEFAULT_VARS_FILE, SESSIONS[session_id]["runtime_env"])
     except Exception as e:
-        # Do not leave a broken session in the global session registry.
+        error_trace = traceback.format_exc()
         SESSIONS.pop(session_id, None)
-
         raise HTTPException(
             status_code=500,
             detail={
                 "status": "CORE_CONFIG_PARSE_ERROR",
-                "message": (
-                    "Failed to compile baseline configurations asset."
-                ),
-                "details": f"Interpreter Trace: {str(e)}"
+                "message": "Baseline structural error.",
+                "details": str(error_trace)
             }
         )
 
-    # Execute only the first prefetch block.
     first_payload_steps = execute_runtime(session_id)
-
     session = SESSIONS[session_id]
 
     return {
         "session_id": session_id,
-
-        # The frontend expects a block named "steps".
         "steps": first_payload_steps,
-
-        # Send the current runtime variables as regular JSON.
-        #
-        # Character is excluded because it is a Python type rather than
-        # game-state data intended for the browser.
         "variables": {
-            key: value
-            for key, value in session["runtime_env"].items()
-            if key != "Character"
-            and not isinstance(value, type)
+            key: value for key, value in session["runtime_env"].items()
+            if key != "Character" and not isinstance(value, type)
         }
     }
 
 
-# NEXT PREFETCH BLOCK
 @app.post("/api/game/next")
-def next_scene(
-    x_session_id: str = Header(
-        None,
-        alias="X-Session-ID"
-    )
-):
-    """
-    Returns the next prefetched dialogue block for an existing session.
-
-    The frontend calls this endpoint only when its local dialogue queue has
-    become empty.
-
-    Therefore one HTTP request can provide several future dialogue turns.
-    """
-
-    # A valid session ID is required for every continuation request.
+async def next_scene(x_session_id: str = Header(None, alias="X-Session-ID")):
     if not x_session_id or x_session_id not in SESSIONS:
         raise HTTPException(
             status_code=401,
-            detail={
-                "status": "UNAUTHORIZED_SESSION",
-                "message": (
-                    "Session expired or layout mapping mismatch "
-                    "context tracking trace."
-                ),
-                "details": (
-                    "Please restart execution pipeline from MainMenu."
-                )
-            }
+            detail={"status": "UNAUTHORIZED_SESSION", "message": "Session context invalid or expired."}
         )
 
-    # Execute the next server-side block.
+    session = SESSIONS[x_session_id]
+    current_time = time.time()
+
+    if session["last_request_time"] > 0:
+        time_passed = current_time - session["last_request_time"]
+        MINIMUM_READ_TIME = 0.2
+        if time_passed < MINIMUM_READ_TIME:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "status": "RATE_LIMIT_EXCEEDED",
+                    "message": "Game state synchronization anomaly detected."
+                }
+            )
+
+    session["last_request_time"] = current_time
     steps = execute_runtime(x_session_id)
 
-    session = SESSIONS[x_session_id]
-
-    # If no dialogues were produced, the runtime has reached the real end
-    # of the complete scenario chain.
     if not steps:
         return {
-            "steps": [
-                {
-                    "type": "game_end"
-                }
-            ],
+            "steps": [{"type": "game_end"}],
             "variables": {
-                key: value
-                for key, value in session["runtime_env"].items()
-                if key != "Character"
-                and not isinstance(value, type)
+                key: value for key, value in session["runtime_env"].items()
+                if key != "Character" and not isinstance(value, type)
             }
         }
 
     return {
         "steps": steps,
         "variables": {
-            key: value
-            for key, value in session["runtime_env"].items()
-            if key != "Character"
-            and not isinstance(value, type)
+            key: value for key, value in session["runtime_env"].items()
+            if key != "Character" and not isinstance(value, type)
+        }
+    }
+
+
+@app.post("/api/game/choice")
+async def select_choice(
+    payload: ChoiceSelection,
+    x_session_id: str = Header(None, alias="X-Session-ID")
+):
+    if not x_session_id or x_session_id not in SESSIONS:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "UNAUTHORIZED_SESSION", "message": "Session expired."}
+        )
+
+    session = SESSIONS[x_session_id]
+
+    if session["step_index"] >= len(session["cached_steps"]):
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "INVALID_STATE", "message": "No active choice found."}
+        )
+
+    current_node = session["cached_steps"][session["step_index"]]
+    if current_node["type"] != "choice":
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "INVALID_STATE", "message": "Pointer configuration mismatch."}
+        )
+
+    if payload.choice_index < 0 or payload.choice_index >= len(current_node["options"]):
+        raise HTTPException(
+            status_code=420,
+            detail={"status": "OUT_OF_BOUNDS", "message": "Selected choice out of scope."}
+        )
+
+    chosen_option = current_node["options"][payload.choice_index]
+    session["step_index"] += 1
+
+    if chosen_option["type"] == "self_closing":
+        session["cached_steps"].insert(session["step_index"], chosen_option["action"])
+    elif chosen_option["type"] == "paired":
+        for nested_step in reversed(chosen_option["branches"]):
+            session["cached_steps"].insert(session["step_index"], nested_step)
+
+    steps = execute_runtime(x_session_id)
+
+    return {
+        "steps": steps,
+        "variables": {
+            key: value for key, value in session["runtime_env"].items()
+            if key != "Character" and not isinstance(value, type)
         }
     }

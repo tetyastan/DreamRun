@@ -1,10 +1,25 @@
-[config "my_variables"/]
-
 [bg "/bg.png"/]
 
-:hero: > Some text here! {hero.money}
+[python "hero.money = 10000"/]
 
-[python "hero.money = 15000"/]
+:hero: > Some text here! My money count: {hero.money}
+
+[ref "123"]
+    [python "hero.money += 15000"/]
+    :hero: > Money now: {hero.money}
+[/ref]
 
 :hero: > Money now: {hero.money}
 :hero: > Name is {name}.
+
+[jump "123"]
+
+[choice]
+    [answer "123"]
+        [jump "123"]
+    [/answer]
+
+    [answer "1234"]
+        [pass/]
+    [/answer]
+[/choice]
