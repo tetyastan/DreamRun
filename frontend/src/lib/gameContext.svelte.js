@@ -13,7 +13,6 @@ class GameState {
     currentSpeaker = $state(null);
     currentText = $state('');
 
-    // Active choices list container placeholder array tracking slots
     currentChoices = $state([]);
 
     playerVariables = $state({});
@@ -52,6 +51,7 @@ class GameState {
         this.pendingNextStep = false;
         this.isGameStarted = false;
         this.dialogueQueue = [];
+        this.currentTextParts = [{ kind: 'text', value: '' }];
         this.currentChoices = [];
         this.sessionId = '';
     }
@@ -92,10 +92,9 @@ class GameState {
 
     processBackground(bg) {
         if (!bg) return;
-        
-        // Check if the server explicitly flagged this background asset as missing
+
         if (bg.startsWith('MISSING:')) {
-            this.currentBg = bg; // Save the token verbatim for GameScreen UI parsing
+            this.currentBg = bg;
         } else if (bg.startsWith('/assets')) {
             this.currentBg = `${this.publicApiUrl}${bg}`;
         } else {
@@ -111,16 +110,14 @@ class GameState {
             return;
         }
 
-        // Trigger step-attached audio tracks processor early before presentation rendering
-        if (dialogue.audio) {
+        if (Array.isArray(dialogue.audio) && dialogue.audio.length > 0) {
             this.audioManager.processAudioCommands(dialogue.audio, this.publicApiUrl);
         }
 
-        // Catch dynamic choice node interruption block structures early
         if (dialogue.type === 'choice') {
             if (dialogue.bg) this.processBackground(dialogue.bg);
             this.currentChoices = dialogue.options || [];
-            this.pendingNextStep = false; // Block dialogue skipping while choices are visible
+            this.pendingNextStep = false;
             this.isGameStarted = true;
             return;
         }
@@ -130,8 +127,8 @@ class GameState {
         }
 
         this.currentSpeaker = dialogue.name || null;
-        this.currentText = dialogue.text || '';
-        this.currentChoices = []; // Clear old choices tracking data lists
+        this.currentText = dialogue.text || ''; // FIXED: Binds plain processed string text
+        this.currentChoices = [];
 
         this.pendingNextStep = true;
         this.isGameStarted = true;
@@ -143,7 +140,6 @@ class GameState {
             return;
         }
 
-        // Intercept inline choice payloads directly from the root batch array node placement
         if (steps[0] && steps[0].type === 'choice') {
             this.processDialogue(steps[0]);
             this.dialogueQueue = [];
@@ -160,9 +156,6 @@ class GameState {
         this.processDialogue(filteredNodes[0]);
     }
 
-    /**
-     * Dispatches the player choice branch target directly back onto the authoritative stream.
-     */
     async selectChoice(choiceIndex) {
         if (this.isLoading) return;
         this.isLoading = true;
@@ -189,7 +182,7 @@ class GameState {
             const data = await response.json();
             if (data.variables) this.playerVariables = data.variables;
 
-            this.currentChoices = []; // Reset active choice presentation nodes
+            this.currentChoices = [];
             this.processBlock(data.steps);
 
         } catch (err) {
@@ -211,7 +204,7 @@ class GameState {
         this.sessionId = '';
         this.currentBg = '';
         this.currentSpeaker = null;
-        this.currentText = '';
+        this.currentTextParts = [{ kind: 'text', value: '' }];
         this.currentChoices = [];
         this.playerVariables = {};
         this.pendingNextStep = false;
@@ -228,7 +221,7 @@ class GameState {
         this.isGameStarted = false;
         this.currentBg = '';
         this.currentSpeaker = null;
-        this.currentText = '';
+        this.currentTextParts = [{ kind: 'text', value: '' }];
         this.dialogueQueue = [];
         this.currentChoices = [];
         this.sessionId = '';
@@ -237,7 +230,7 @@ class GameState {
 
     async nextStep() {
         if (!this.isGameStarted) return;
-        if (this.currentChoices.length > 0) return; // Prevent advancing text manually if choice prompts await input actions
+        if (this.currentChoices.length > 0) return;
 
         if (this.dialogueQueue.length > 0) {
             const nextNode = this.dialogueQueue.shift();
@@ -331,70 +324,67 @@ class GameState {
     }
 }
 
+
+/**
+ * Web Audio API based audio manager.
+ *
+ * Replaces the previous HTMLAudioElement approach to guarantee
+ * sample-accurate gapless looping for background music.
+ *
+ * The public API (processAudioCommands / stopAudio / clearAll) is
+ * preserved so GameState does not need to change.
+ *
+ * AudioContext starts in "suspended" state until a user gesture.
+ * _ensureContext() resumes it on every command. In practice the
+ * first command arrives after the player has clicked "Start",
+ * which counts as a gesture.
+ */
 class AudioManager {
     constructor() {
-        this.activeAudioPool = new Map(); // Tracks active tracks: id -> HTMLAudioElement
+        // Lazy-initialized on the first command that needs playback.
+        this.audioContext = null;
+
+        // id -> { source, gainNode, modifier, buffer }
+        // `source` may be null if the track has finished (one-shot sound).
+        this.activeAudioPool = new Map();
+
+        // url -> AudioBuffer cache, so repeated music does not re-decode.
+        this.bufferCache = new Map();
+
+        // id -> url, to know what to replay on resume after a one-shot
+        // sound has already ended.
+        this.trackUrlById = new Map();
     }
 
-    /**
-     * Executes a batch array of server authoritative audio runtime commands.
-     */
-    processAudioCommands(commands, publicApiUrl) {
-        if (!Array.isArray(commands)) return;
+    // ---------------------------------------------------------------------
+    // Public API
+    // ---------------------------------------------------------------------
+
+    async processAudioCommands(commands, publicApiUrl) {
+        if (!Array.isArray(commands) || commands.length === 0) {
+            return;
+        }
+
+        // Resume the context on every batch: cheap, and protects
+        // against the case where the browser suspended it between
+        // user gestures.
+        await this._ensureContext();
 
         for (const cmd of commands) {
             const { modifier, id } = cmd;
 
             if (modifier === 'sound' || modifier === 'music') {
-                // If the track is missing or invalid, print warning and continue safely
-                if (cmd.path.startsWith('MISSING:')) {
-                    console.warn(`[Audio Engine] Missing sound asset registration: ${cmd.path}`);
-                    continue;
-                }
-
-                // If an item with this ID is already playing, clear it out first
-                this.stopAudio(id);
-
-                // Resolve full URL
-                const srcUrl = cmd.path.startsWith('/assets') ? `${publicApiUrl}${cmd.path}` : cmd.path;
-                
-                const audio = new Audio(srcUrl);
-                audio.volume = cmd.volume ?? 1.0;
-                audio.playbackRate = cmd.pitch ?? 1.0;
-                
-                if (modifier === 'music') {
-                    audio.loop = true;
-                } else {
-                    // Automatically drop references when standard one-shot sounds complete
-                    audio.onended = () => {
-                        this.activeAudioPool.delete(id);
-                    };
-                }
-
-                audio.play().catch(err => console.error(`[Audio Engine] Playback failed for ID ${id}:`, err));
-                this.activeAudioPool.set(id, audio);
+                await this._startTrack(cmd, publicApiUrl);
             }
-
             else if (modifier === 'modify') {
-                const audio = this.activeAudioPool.get(id);
-                if (audio) {
-                    if (cmd.volume !== null && cmd.volume !== undefined) audio.volume = cmd.volume;
-                    if (cmd.pitch !== null && cmd.pitch !== undefined) audio.playbackRate = cmd.pitch;
-                }
+                this._modifyTrack(cmd);
             }
-
             else if (modifier === 'pause') {
-                const audio = this.activeAudioPool.get(id);
-                if (audio) audio.pause();
+                this._pauseTrack(id);
             }
-
             else if (modifier === 'resume') {
-                const audio = this.activeAudioPool.get(id);
-                if (audio && audio.paused) {
-                    audio.play().catch(err => console.error(`[Audio Engine] Resume failed for ID ${id}:`, err));
-                }
+                this._resumeTrack(id);
             }
-
             else if (modifier === 'stop') {
                 this.stopAudio(id);
             }
@@ -402,20 +392,296 @@ class AudioManager {
     }
 
     stopAudio(id) {
-        const audio = this.activeAudioPool.get(id);
-        if (audio) {
-            audio.pause();
-            audio.currentTime = 0;
-            this.activeAudioPool.delete(id);
+        const entry = this.activeAudioPool.get(id);
+        if (!entry) return;
+
+        try {
+            if (entry.source) {
+                // Disconnect first so a pending stop does not fire onended.
+                entry.source.onended = null;
+                entry.source.stop();
+                entry.source.disconnect();
+            }
+            if (entry.gainNode) {
+                entry.gainNode.disconnect();
+            }
+        } catch (e) {
+            // Calling stop() twice throws; ignore.
         }
+
+        this.activeAudioPool.delete(id);
+        this.trackUrlById.delete(id);
     }
 
     clearAll() {
-        for (const id of this.activeAudioPool.keys()) {
+        const ids = Array.from(this.activeAudioPool.keys());
+        for (const id of ids) {
             this.stopAudio(id);
         }
     }
+
+    // ---------------------------------------------------------------------
+    // Internal helpers
+    // ---------------------------------------------------------------------
+
+    async _ensureContext() {
+        if (typeof window === 'undefined') return;
+
+        if (!this.audioContext) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) {
+                console.warn('[DreamRun][audio] Web Audio API is not supported.');
+                return;
+            }
+            this.audioContext = new Ctx();
+        }
+
+        if (this.audioContext.state === 'suspended') {
+            try {
+                await this.audioContext.resume();
+            } catch (e) {
+                console.warn('[DreamRun][audio] Failed to resume AudioContext:', e);
+            }
+        }
+    }
+
+    async _loadBuffer(url) {
+        if (this.bufferCache.has(url)) {
+            return this.bufferCache.get(url);
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} while fetching ${url}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+
+        this.bufferCache.set(url, audioBuffer);
+        return audioBuffer;
+    }
+
+    async _startTrack(cmd, publicApiUrl) {
+        const { modifier, id } = cmd;
+
+        if (cmd.path && cmd.path.startsWith('MISSING:')) {
+            console.warn(`[DreamRun][audio] Missing asset for id=${id}: ${cmd.path}`);
+            return;
+        }
+
+        const srcUrl = cmd.path && cmd.path.startsWith('/assets')
+            ? `${publicApiUrl}${cmd.path}`
+            : cmd.path;
+
+        this.stopAudio(id);
+
+        let audioBuffer;
+        try {
+            audioBuffer = await this._loadBuffer(srcUrl);
+        } catch (e) {
+            console.error(`[DreamRun][audio] Failed to load id=${id} from ${srcUrl}:`, e);
+            return;
+        }
+
+        const source = this.audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.loop = modifier === 'music';
+
+        const gainNode = this.audioContext.createGain();
+
+        // Volume: either a plain value or an animated ramp.
+        this._applyParam(gainNode.gain, cmd.volume, 1.0);
+
+        // Pitch: same treatment.
+        this._applyParam(source.playbackRate, cmd.pitch, 1.0);
+
+        source.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+
+        if (modifier !== 'music') {
+            source.onended = () => {
+                const entry = this.activeAudioPool.get(id);
+                if (entry && entry.source === source) {
+                    try { source.disconnect(); } catch {}
+                    try { gainNode.disconnect(); } catch {}
+                    this.activeAudioPool.delete(id);
+                    this.trackUrlById.delete(id);
+                }
+            };
+        }
+
+        try {
+            source.start();
+        } catch (e) {
+            console.error(`[DreamRun][audio] Failed to start id=${id}:`, e);
+            return;
+        }
+
+        this.activeAudioPool.set(id, {
+            source,
+            gainNode,
+            modifier,
+            buffer: audioBuffer,
+            startedAt: this.audioContext.currentTime,
+            lastPitch: this._resolveScalar(cmd.pitch, 1.0),
+            lastVolume: this._resolveScalar(cmd.volume, 1.0),
+        });
+        this.trackUrlById.set(id, srcUrl);
+    }
+
+    _modifyTrack(cmd) {
+        const { id } = cmd;
+        const entry = this.activeAudioPool.get(id);
+        if (!entry) return;
+
+        // For modify operations, if the server payload doesn't supply a 'from' boundary,
+        // we explicitly inject our safely cached 'lastPitch' / 'lastVolume' state markers 
+        // into the payload parameters before running the timeline scheduler.
+        if (entry.source && cmd.pitch !== null && cmd.pitch !== undefined) {
+            let pitchPayload = cmd.pitch;
+            if (typeof pitchPayload === 'object' && pitchPayload.from === undefined) {
+                pitchPayload = { ...pitchPayload, from: entry.lastPitch ?? 1.0 };
+            }
+            
+            this._applyParam(entry.source.playbackRate, pitchPayload, entry.lastPitch ?? 1.0);
+            entry.lastPitch = this._resolveScalar(cmd.pitch, entry.lastPitch ?? 1.0);
+        }
+        
+        if (entry.gainNode && cmd.volume !== null && cmd.volume !== undefined) {
+            let volumePayload = cmd.volume;
+            if (typeof volumePayload === 'object' && volumePayload.from === undefined) {
+                volumePayload = { ...volumePayload, from: entry.lastVolume ?? 1.0 };
+            }
+            
+            this._applyParam(entry.gainNode.gain, volumePayload, entry.lastVolume ?? 1.0);
+            entry.lastVolume = this._resolveScalar(cmd.volume, entry.lastVolume ?? 1.0);
+        }
+    }
+
+    _resolveScalar(payload, fallback) {
+        if (typeof payload === 'number' && Number.isFinite(payload)) return payload;
+        if (payload && typeof payload === 'object') {
+            if (typeof payload.value === 'number' && Number.isFinite(payload.value)) return payload.value;
+            if (typeof payload.to === 'number' && Number.isFinite(payload.to)) return payload.to;
+        }
+        return fallback;
+    }
+
+    /**
+     * Apply a numeric value or an animation descriptor to an AudioParam.
+     *
+     * Accepts three shapes:
+     *     { value, duration_ms }              plain value
+     *     { from, to, duration_ms }           ramp between two values
+     *     <number>                            shorthand for plain value
+     *
+     * Guards against NaN / Infinity so a malformed server payload does
+     * not throw inside setValueAtTime / linearRampToValueAtTime.
+     */
+    _applyParam(param, payload, fallback) {
+        const safe = (x, fb) => (typeof x === 'number' && Number.isFinite(x)) ? x : fb;
+
+        if (payload === null || payload === undefined) {
+            param.value = safe(fallback, 0);
+            return;
+        }
+
+        if (typeof payload === 'number') {
+            param.value = safe(payload, safe(fallback, 0));
+            return;
+        }
+
+        if (typeof payload !== 'object') {
+            param.value = safe(fallback, 0);
+            return;
+        }
+
+        // Animation form: { from, to, duration_ms }
+        if ('to' in payload) {
+            const now = this.audioContext.currentTime;
+            
+            // Trust the fallback value (passed from our cached lastVolume/lastPitch memory slot) 
+            // if payload.from is explicitly missing, avoiding broken timeline jumps.
+            const fromV = (payload.from !== undefined && payload.from !== null) 
+                ? safe(payload.from, safe(fallback, 0)) 
+                : safe(fallback, 0);
+                
+            const toV = safe(payload.to, fromV);
+            const durS = safe(payload.duration_ms, 0) / 1000;
+
+            param.cancelScheduledValues(now);
+            // Anchor baseline parameter position firmly at the current timeline point
+            param.setValueAtTime(fromV, now);
+            
+            if (durS > 0) {
+                // Smoothly progress towards target destination using native Web Audio scheduling
+                param.linearRampToValueAtTime(toV, now + durS);
+            } else {
+                param.value = toV;
+            }
+            return;
+        }
+
+        if ('value' in payload) {
+            param.value = safe(payload.value, safe(fallback, 0));
+            return;
+        }
+
+        param.value = safe(fallback, 0);
+    }
+
+    _pauseTrack(id) {
+        const entry = this.activeAudioPool.get(id);
+        if (!entry || !entry.source) return;
+
+        // Web Audio does not expose pause/resume on a source node.
+        // The standard approach: record the elapsed offset, stop the
+        // source, and on resume create a new source that starts at
+        // the saved offset. The buffer is cached, so this is cheap.
+        const elapsed = this.audioContext.currentTime - (entry.startedAt ?? 0);
+        entry.pausedAt = (entry.pausedAt ?? 0) + elapsed;
+        entry.startedAt = null;
+
+        try {
+            entry.source.onended = null;
+            entry.source.stop();
+            entry.source.disconnect();
+        } catch {}
+
+        // Mark as paused but keep the entry so resume() can use its buffer.
+        entry.source = null;
+    }
+
+    _resumeTrack(id) {
+        const entry = this.activeAudioPool.get(id);
+        if (!entry) return;
+        if (entry.source) return; // already playing
+
+        const source = this.audioContext.createBufferSource();
+        source.buffer = entry.buffer;
+        
+        // Restore the exact speed/pitch coefficient that was active before the track was paused
+        source.playbackRate.value = entry.lastPitch ?? 1.0;
+        source.loop = entry.modifier === 'music';
+
+        source.connect(entry.gainNode);
+
+        // Re-apply the cached volume directly onto the gain node parameter to avoid audio spike artifacts
+        entry.gainNode.gain.setValueAtTime(entry.lastVolume ?? 1.0, this.audioContext.currentTime);
+
+        try {
+            source.start(0, entry.pausedAt ?? 0);
+        } catch (e) {
+            console.error(`[DreamRun][audio] Failed to resume id=${id}:`, e);
+            return;
+        }
+
+        entry.source = source;
+        entry.startedAt = this.audioContext.currentTime - (entry.pausedAt ?? 0);
+        entry.pausedAt = null;
+    }
 }
+
 
 const GAME_CONTEXT_KEY = Symbol('GAME_CONTEXT');
 

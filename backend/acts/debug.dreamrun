@@ -1,0 +1,162 @@
+## ============================================================
+## DEBUG: ADVANCED TAG INTERACTIONS
+## No story. Verifies nested scopes, subroutines calling other
+## subroutines, refs that mutate state, prefetch boundaries,
+## conditional blocks with elif chains, choice inside if inside
+## answer, and recovery after goto.
+## ============================================================
+
+[bg "/backgrounds/debug_black.jpg"/]
+
+> "[setup] advanced debug scenario started."
+
+[python]
+    hits = []
+    counter = 0
+    flag = True
+    mode = "alpha"
+[/python]
+
+## --- [if]/[elif]/[else] full chain ---
+[if mode == "alpha"]
+    [python "hits.append('if-alpha')"/]
+    > "[if-chain] took if branch (mode == alpha)."
+[elif mode == "beta"]
+    [python "hits.append('elif-beta')"/]
+    > "[if-chain] took elif branch (mode == beta)."
+[else]
+    [python "hits.append('else')"/]
+    > "[if-chain] took else branch."
+[/if]
+
+## --- [if] with no else, condition false ---
+[if mode == "gamma"]
+    > "[if-no-else] SHOULD NOT BE SEEN."
+[/if]
+> "[if-no-else] block skipped, this line is always seen."
+
+## --- [if] with complex expression ---
+[if counter >= 0 and flag == True and mode in ("alpha", "beta")]
+    [python "hits.append('complex')"/]
+    > "[if-complex] compound condition true."
+[/if]
+
+## --- nested [if] ---
+[if flag == True]
+    > "[nested-if] outer true."
+    [if counter == 0]
+        [python "hits.append('nested-inner')"/]
+        > "[nested-if] inner true."
+    [else]
+        > "[nested-if] inner false."
+    [/if]
+    > "[nested-if] after inner."
+[/if]
+
+## --- [ref] that mutates session state ---
+[ref mutate_state]
+    [python "counter += 1"/]
+    [python "hits.append(f'mutate-{counter}')"/]
+    > "[ref mutate] counter is now {counter}."
+[/ref]
+
+[jump mutate_state/]
+> "[after jump] counter={counter}"
+
+## --- [ref] that calls another [ref] via [jump] (nested subroutine) ---
+[ref outer_ref]
+    > "[outer_ref] entered."
+    [jump inner_ref/]
+    > "[outer_ref] resumed after inner_ref."
+[/ref]
+
+[ref inner_ref]
+    > "[inner_ref] entered."
+    [python "hits.append('inner')"/]
+    > "[inner_ref] leaving."
+[/ref]
+
+[jump outer_ref/]
+> "[after nested jump] both refs returned."
+
+## --- [ref] called twice in a row: state should persist across calls ---
+[jump mutate_state/]
+[jump mutate_state/]
+> "[after double jump] counter={counter}"
+
+## --- [choice] with mixed branch types ---
+
+> "[choice-start] pick a branch."
+
+[choice]
+    [answer "Branch that mutates and continues"]
+        [python "mode = 'beta'"/]
+        [python "hits.append('choice-mutate')"/]
+        > "[choice] mutated mode to beta."
+    [/answer]
+
+    [answer "Branch with nested choice"]
+        > "[choice] entering nested choice."
+        [choice]
+            [answer "Nested branch A"]
+                [python "hits.append('nested-A')"/]
+                > "[choice-nested] took A."
+            [/answer]
+            [answer "Nested branch B"]
+                [python "hits.append('nested-B')"/]
+                > "[choice-nested] took B."
+            [/answer]
+        [/choice]
+        > "[choice] nested choice returned."
+    [/answer]
+
+    [answer "Branch with nested if inside"]
+        [if flag == True]
+            [python "hits.append('choice-if-true')"/]
+            > "[choice-if] took true branch."
+        [else]
+            > "[choice-if] took false branch."
+        [/if]
+    [/answer]
+
+    [answer "Branch that jumps into a ref"]
+        [jump mutate_state/]
+        > "[choice-jump] back from ref."
+    [/answer]
+[/choice]
+
+> "[choice-end] all branches converged."
+
+## --- [elif] chain re-evaluated after choice mutated mode ---
+
+[if mode == "alpha"]
+    > "[post-choice if] still alpha."
+[elif mode == "beta"]
+    > "[post-choice if] now beta."
+[else]
+    > "[post-choice if] something else."
+[/if]
+
+## --- [goto] into a ref that ends with [next] (no return) ---
+[choice]
+    [answer "Goto finale"]
+        [goto advanced_finale/]
+    [/answer]
+    [answer "Fall through"]
+        > "[goto-skip] staying in current act."
+    [/answer]
+[/choice]
+
+> "[fallthrough] reached only via the second option."
+
+## --- final ref: dumps collected hits and loops back ---
+[ref advanced_finale]
+    > "[finale] collected hits:"
+    [python]
+        for h in hits:
+            pass  # just to prove multiline loops work inside refs
+    [/python]
+    :hero: > "[finale] hits = {hits}"
+    :hero: > "[finale] counter = {counter}, mode = {mode}, flag = {flag}"
+    [next "debug.dreamrun"/]
+[/ref]

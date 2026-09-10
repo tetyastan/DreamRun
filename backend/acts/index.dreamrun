@@ -1,91 +1,128 @@
-## --- 1. Initialize environment and assets ---
-[config "game_init"/]
-[bg "/backgrounds/intro_hall.jpg"/]
+# ====================================================================
+# DREAMRUN ADVANCED DEMO SCENARIO
+# Showcase file utilizing 100% of the current custom engine syntax layers
+# ====================================================================
 
-# Inline python: attach a scalar to the hero Character.
-[python "hero.money = 150"/]
+## --- [config] ---
+## Loads a Python module into the runtime env. The module should
+## define a variable named `debug_marker` (see config/debug_vars.py).
+[audio music "/debug.wav" dbg "0.5~2000" "1.0"/]
 
-# Multi-line python block: attach multiple attributes at once.
-# Indentation inside the block is normalized by textwrap.dedent.
+[config "game_init.py"/]
+> "[config] game_init.py loaded."
+
+# Relative transition: smoothly fades volume from its current state (0.5) to 0.1 over 2000ms
+[audio modify dbg "0.1~2000" "1.0"/]
+
+## --- [bg] with leading slash (should be rewritten to /assets/...) ---
+[bg "/backgrounds/debug_red.jpg"/]
+> "[bg] slash path set."
+
+# Relative instant modification: clamps volume to 0.15 without transitions
+[audio modify dbg "0.15" "1.0"/]
+
+## --- [bg] without leading slash (should be used as-is) ---
+[bg "http://example.invalid/blue.jpg"/]
+> "[bg] absolute URL set."
+
+## --- [bg] with non-existent local file (should be marked MISSING) ---
+[bg "/backgrounds/does_not_exist.jpg"/]
+> "[bg] missing file check."
+
+## --- [python "inline"] single statement ---
+[python "debug_scalar = 15"/]
+# Requirement 2: Count from current Python state (0.0 dynamically assumed internally) up to N (15.0)
+:hero: > "[python inline] debug_scalar = {debug_scalar ~ ->15:2000} right now, but what it will be next?"
+
+## --- [python "inline"] with expression, no assignment ---
+[python "debug_scalar + 1"/]
+:hero: > "[python inline expr] still {debug_scalar}"
+
+## --- [python] ... [/python] multi-line, no leading indent ---
 [python]
-    hero.has_key = False
-    hero.reputation = 0
-    hero.visited_altar = False
+debug_a = 10
+debug_b = 20
 [/python]
+# Plain static substitution example
+:hero: > "[python multiline flat] a={debug_a} b={debug_b}"
 
-## --- 2. Opening narration and variable speaker ---
-> "You open your eyes in the middle of a dimly lit stone hall."
-:hero: > "Where am I? Hm... There are only {hero.money} coins left in my pouch."
+## --- [python] ... [/python] multi-line, indented ---
+[python]
+    debug_c = 30
+    debug_d = 40
+[/python]
+# Requirement 1: Count strictly from 0 to N (40) regardless of the actual engine variable value
+:hero: > "[python multiline indented] c={debug_c} d={debug_d ~ 0->40:1500}"
 
-## --- 3. Isolated subroutine ---
-# Never reached by the main flow. Entered via [jump check_status/]
-# and returns to the caller when the block finishes.
-[ref check_status]
-    > "[Status Check] The engine has invoked an isolated subroutine."
-    [if hero.reputation >= 1]
-        :hero: > "People whisper about me with respect."
-    [elif hero.reputation <= -1]
-        :hero: > "I have made enemies in this hall."
-    [else]
-        :hero: > "Nobody knows anything about me yet."
-    [/if]
-[/ref]
+## --- [python] ... [/python] with a comment inside ---
+[python]
+    # This is a Python comment, not a DreamRun comment.
+    debug_e = 50
+[/python]
+# Requirement 3: Count down from a strict start bound (100) down to the current active Python value (50)
+:hero: > "[python multiline comment] e={debug_e ~ 100->:2500}"
 
-## --- 4. First branching path menu ---
+## --- [pass/] ---
+[pass/]
+> "[pass] no-op executed."
+
+## --- narrator line ---
+> "[narrator] plain narrator line."
+
+## --- variable speaker, existing Character ---
+:hero: > "[var speaker] resolved to Character.name."
+
+## --- variable speaker, unknown key (falls back to raw token) ---
+:ghost: > "[var speaker fallback] key 'ghost' missing."
+
+## --- literal speaker ---
+Debugger > "[literal speaker] name shown verbatim."
+
+## --- literal speaker with spaces in name ---
+The Debugger > "[literal speaker spaces] multi-word name."
+
+## --- placeholder substitution from env ---
+:hero: > "[placeholder] scalar is {debug_scalar}, sum is {debug_a}."
+
+## --- placeholder with unknown key (should not crash) ---
+:hero: > "[placeholder unknown] value is {missing_key}."
+
+## --- [jump] into a simple ref ---
+[jump debug_simple_ref/]
+> "[jump] returned from debug_simple_ref."
+
+## --- [goto] into a ref (no return) ---
+## The ref itself ends with [goto debug_final_ref/], so control
+## leaves this act entirely.
 [choice]
-    [answer "Search the old chest in the corner"]
-        > "You approach a dust-covered chest."
-        [python "hero.money += 400"/]
-        [python "hero.has_key = True"/]
-        :hero: > "Excellent! I found an old key and a handful of gold. Now I have {hero.money} coins."
+    [answer "Continue to goto test"]
+        [goto debug_goto_target/]
     [/answer]
-
-    [answer "Pray to the gods at the altar"]
-        [python]
-            hero.reputation += 1
-            hero.visited_altar = True
-        [/python]
-    [/answer]
-
-    [answer "Do nothing"]
-        [pass/]
+    [answer "Skip goto test"]
+        > "[choice] skipped goto test."
     [/answer]
 [/choice]
 
-## --- 5. Core execution continues after the choice ---
-> "Massive iron-bound doors appear ahead."
+Nestor > "[after choice] this line is reached only if 'Skip' was chosen."
 
-## --- 6. Conditional logic evaluating the consequences of the choice ---
-[if hero.has_key == True]
-    > "You insert the discovered key into the keyhole."
-    > "The door gives way with a loud creak."
-    [bg "/backgrounds/secret_garden.jpg"/]
+## --- fall-through target for the choice above ---
+[ref debug_final_ref]
+    > "[goto target] final ref reached."
+    [next "debug.dreamrun"/]
+[/ref]
 
-    # Nested choice inside an if-branch.
-    [choice]
-        [answer "Check my reputation before leaving"]
-            # Subroutine call: enters [ref check_status], then returns here.
-            [jump check_status/]
-            :hero: > "Well, it is time to move on."
-            [next "chapter_one.dreamrun"/]
-        [/answer]
+## --- [ref] simple subroutine with return ---
+[ref debug_simple_ref]
+    > "[ref debug_simple_ref] entered."
+    [if 1 == 1]
+        > "[ref debug_simple_ref][if 1==1] true branch."
+    [/if]
+[/ref]
 
-        [answer "Run straight ahead"]
-            [next "chapter_one.dreamrun"/]
-        [/answer]
-    [/choice]
-
-[elif hero.money >= 500]
-    > "The door is locked, but a guard stands nearby, ready to take a bribe."
-    :hero: > "I have exactly {hero.money} coins. Take the payment and open up."
-    [python "hero.money -= 500"/]
-    [next "chapter_one.dreamrun"/]
-
-[else]
-    > "The doors are surprisingly unlocked. You push them open with your bare hands."
-    [bg "/backgrounds/secret_garden.jpg"/]
-    [next "chapter_one.dreamrun"/]
-[/if]
-
-# Unreachable placeholder — every branch above ends with [next].
-> "This line is unreachable placeholder text."
+## --- [ref] goto target ---
+[ref debug_goto_target]
+    > "[ref debug_goto_target] entered via goto."
+    > "[ref debug_goto_target] will now jump to debug_final_ref."
+    [goto debug_final_ref/]
+    > "[ref debug_goto_target] UNREACHABLE."
+[/ref]

@@ -1,29 +1,33 @@
-import importlib.util
 import os
-import uuid
-import traceback
 from fastapi import HTTPException
-from src.core import Character
-from src.config import SESSIONS, ASSETS_DIR, SCENARIOS_DIR, CONFIG_DIR, PREFETCH_COUNT
+from src.config import (
+    SESSIONS, SCENARIOS_DIR, PREFETCH_COUNT,
+)
 from src.parser import parse_dreamrun_blocks
+from src.tags import EXECUTORS
+from src.tags.visual import BackgroundTag
+from src.tags.config_tag import ConfigTag
 
 
 def load_py_config(file_path: str, environment: dict) -> bool:
     """
-    Loads a Python configuration file into a scenario runtime environment.
+    Loads a Python config file into a runtime environment.
 
-    Every public attribute defined in the module is copied into the
-    session environment so that scripts and dialogue templates can
-    reference it directly.
+    Thin wrapper around ConfigTag.execute for callers that need to
+    load an arbitrary file path (not just a name relative to CONFIG_DIR).
+    The default --vars.py bootstrap uses this. Scenario-level
+    [config "..."] tags go through the normal tag registry instead.
 
-    Safety notes:
-        - The module is executed with full Python privileges; only load
-          trusted files. Do not point this at user-uploaded content.
-        - `Character` is preserved: a config file cannot shadow the
-          engine's Character class.
+    Returns True if the file existed and was loaded, False if it was
+    missing. Raises HTTPException on syntax errors.
     """
     if not os.path.exists(file_path):
         return False
+
+    import importlib.util
+    import uuid
+    import traceback
+
     try:
         module_name = f"dynamic_config_{uuid.uuid4().hex}"
         spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -35,273 +39,152 @@ def load_py_config(file_path: str, environment: dict) -> bool:
             if not key.startswith("__") and key != "Character":
                 environment[key] = value
         return True
-    except Exception as e:
-        raise e
+    except Exception:
+        trace = traceback.format_exc()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "CONFIG_PARSE_ERROR",
+                "message": f"Syntax compilation failure: {file_path}",
+                "details": str(trace),
+            },
+        )
 
 
-def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> list:
+def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dict:
     """
-    Processes server-side scenario execution pipelines using subroutine stack frames.
-
-    `max_dialogues` limits only the number of visible frames
-    (dialogue or choice) returned in the batch.
-    
-    Invisible steps (python_exec, cfg_import, bg, pass, jump,
-    goto, conditional_block) are executed unconditionally and
-    never count against the limit.
-    
-    The loop stops before executing a step that would produce a
-    visible frame if the batch is already full. This keeps the
-    session pointer right at that step, so the next call resumes
-    exactly from there.
-    
-    change_act stops the batch immediately after swapping the
-    act, because the next act must begin on a fresh request.
+    Executes scenario steps until `max_dialogues` visible frames have
+    been produced, a choice is reached, an act swap occurs, or the
+    track is exhausted.
     """
     session = SESSIONS[session_id]
     env = session["runtime_env"]
     dialogues = []
-    pending_bg = None
+    session["_pending_bg"] = None
+    session["_pending_audio"] = []
+
+    ctx = {
+        "session": session,
+        "env": env,
+        "dialogues": dialogues,
+    }
 
     while True:
-        # Exhaustion handling
+        # Exhaustion handling: return from subroutine, or stop.
         if session["step_index"] >= len(session["cached_steps"]):
             if session["return_stack"]:
                 frame = session["return_stack"].pop()
                 session["cached_steps"] = frame["steps"]
                 session["step_index"] = frame["index"]
                 continue
-            # Nothing left in the current track.
             break
 
         step = session["cached_steps"][session["step_index"]]
 
-        # Visible frame types: check the limit before consuming
-        if step["type"] == "choice":
+        # --- Visible frames: enforce prefetch limit BEFORE consuming ---
+        if step["type"] in ("dialogue", "choice"):
             if len(dialogues) >= max_dialogues:
-                # Batch is full. Leave step_index on the choice so the next call picks it up.
                 break
 
-            # --- VALIDATE BACKGROUND ASSET FOR CHOICE NODE ---
-            final_choice_bg = pending_bg
-            if pending_bg:
-                relative_path = pending_bg.replace("/assets/", "")
-                absolute_asset_path = os.path.join(ASSETS_DIR, relative_path)
-                if not os.path.exists(absolute_asset_path):
-                    final_choice_bg = f"MISSING:{os.path.basename(pending_bg)}"
-
-            # Build the choice frame.
-            options_payload = []
-            for idx, opt in enumerate(step["options"]):
-                options_payload.append({"index": idx, "text": opt["text"]})
+        # --- Choice is a hard boundary: stop the batch ---
+        if step["type"] == "choice":
+            options = [
+                {"index": i, "text": opt["text"]}
+                for i, opt in enumerate(step["options"])
+            ]
             dialogues.append({
                 "type": "choice",
-                "bg": final_choice_bg,
-                "options": options_payload
+                "bg": BackgroundTag.validate(session.get("_pending_bg")),
+                "audio": session.get("_pending_audio", []),
+                "options": options,
             })
-            # Do NOT advance step_index — choice must be re-visited by
-            # /api/game/choice to know which branch to inject.
+            session["_pending_audio"] = []
+            session["_pending_bg"] = None
+            # Do not advance the pointer: /api/game/choice will read it.
             break
 
-        if step["type"] == "audio":
-            audio_command = {
-                "modifier": step["modifier"],
-                "id": step["id"]
-            }
-            
-            # File validation layer for new entries
-            if step["modifier"] in ("sound", "music"):
-                path_value = step["path"]
-                if path_value.startswith("/assets/"):
-                    relative_path = path_value.replace("/assets/", "")
-                    absolute_asset_path = os.path.join(ASSETS_DIR, relative_path)
-                    
-                    # Validate asset existence on server hard drive disk
-                    if not os.path.exists(absolute_asset_path):
-                        path_value = f"MISSING:{os.path.basename(step['path'])}"
-                
-                audio_command.update({
-                    "path": path_value,
-                    "volume": step["volume"],
-                    "pitch": step["pitch"]
-                })
-            
-            elif step["modifier"] == "modify":
-                audio_command.update({
-                    "volume": step["volume"],
-                    "pitch": step["pitch"]
-                })
-
-            session["pending_audio"].append(audio_command)
-            continue
-
+        # --- Dialogue consumes the pointer and emits a frame ---
         if step["type"] == "dialogue":
-            if len(dialogues) >= max_dialogues:
-                # Batch is full. Leave step_index on this dialogue so the next call resumes exactly here.
-                break
-            # Consume the dialogue.
             session["step_index"] += 1
-
-            name = None
-            if step["speaker_mode"] == "variable":
-                var_key = step["key"]
-                if var_key in env and isinstance(env[var_key], Character):
-                    name = env[var_key].name
-                else:
-                    name = var_key
-            elif step["speaker_mode"] == "literal":
-                name = step["name"]
-
-            text = step["text"]
-            if text:
-                try:
-                    formatting_map = {key: value for key, value in env.items()}
-                    text = text.format(**formatting_map)
-                except Exception:
-                    pass
-
-            # --- VALIDATE BACKGROUND ASSET FOR DIALOGUE NODE ---
-            final_dialogue_bg = pending_bg
-            if pending_bg:
-                relative_path = pending_bg.replace("/assets/", "")
-                absolute_asset_path = os.path.join(ASSETS_DIR, relative_path)
-                if not os.path.exists(absolute_asset_path):
-                    final_dialogue_bg = f"MISSING:{os.path.basename(pending_bg)}"
-
-            dialogues.append({
-                "type": "dialogue",
-                "name": name,
-                "text": text,
-                "bg": final_dialogue_bg
-            })
-            pending_bg = None
+            result = _dispatch(step, ctx)
+            if isinstance(result, tuple) and result[0] == "frame":
+                frame = result[1]
+                frame["bg"] = BackgroundTag.validate(session.get("_pending_bg"))
+                frame["audio"] = session.get("_pending_audio", [])
+                session["_pending_audio"] = []
+                session["_pending_bg"] = None
+                dialogues.append(frame)
             continue
 
-        # Invisible steps? Always execute, never count against limit
-        # Advance the pointer for all non-choice, non-dialogue steps.
+        # --- Invisible steps: advance pointer, then dispatch ---
         session["step_index"] += 1
+        result = _dispatch(step, ctx)
 
-        if step["type"] == "pass":
-            continue
-
-        if step["type"] == "change_act":
-            target_file_name = os.path.basename(step["next_act_path"])
-            next_file = os.path.join(SCENARIOS_DIR, target_file_name)
+        if result == "change_act":
+            target_name = os.path.basename(step["next_act_path"])
+            next_file = os.path.join(SCENARIOS_DIR, target_name)
             data = parse_dreamrun_blocks(next_file)
-
             if not data:
                 raise HTTPException(
                     status_code=404,
                     detail={
                         "status": "CHAPTER_MISSING_ERROR",
-                        "message": f"Next act chapter file '{target_file_name}' not found."
-                    }
+                        "message": f"Next act chapter file '{target_name}' not found.",
+                    },
                 )
-
             session["current_act"] = next_file
             session["cached_steps"] = data["steps"]
             session["step_index"] = 0
             session["references"] = data["references"]
             session["return_stack"] = []
-            # Act swap must end the batch cleanly.
             break
 
-        if step["type"] == "jump":
-            target_ref = step["target"]
-            if target_ref not in session["references"]:
+        if result == "jump":
+            target = step["target"]
+            if target not in session["references"]:
                 raise HTTPException(
                     status_code=422,
                     detail={
                         "status": "REFERENCE_NOT_FOUND",
-                        "message": f"Reference tracking key '{target_ref}' missing."
-                    }
+                        "message": f"Reference tracking key '{target}' missing.",
+                    },
                 )
             session["return_stack"].append({
                 "steps": session["cached_steps"],
-                "index": session["step_index"]
+                "index": session["step_index"],
             })
-            session["cached_steps"] = list(session["references"][target_ref])
+            session["cached_steps"] = list(session["references"][target])
             session["step_index"] = 0
             continue
 
-        if step["type"] == "goto":
-            target_ref = step["target"]
-            if target_ref not in session["references"]:
+        if result == "goto":
+            target = step["target"]
+            if target not in session["references"]:
                 raise HTTPException(
                     status_code=422,
                     detail={
                         "status": "REFERENCE_NOT_FOUND",
-                        "message": f"Reference tracking key '{target_ref}' missing."
-                    }
+                        "message": f"Reference tracking key '{target}' missing.",
+                    },
                 )
-            session["cached_steps"] = list(session["references"][target_ref])
+            session["cached_steps"] = list(session["references"][target])
             session["step_index"] = 0
             continue
 
-        if step["type"] == "python_exec":
-            try:
-                exec(step["code"], {}, env)
-            except Exception:
-                error_trace = traceback.format_exc()
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "status": "SCRIPT_RUNTIME_ERROR",
-                        "message": "Python step failed.",
-                        "details": f"Code:\n{step['code']}\n\nTrace:\n{error_trace}"
-                    }
-                )
+        if isinstance(result, tuple) and result[0] == "inject":
+            for nested in reversed(result[1]):
+                session["cached_steps"].insert(session["step_index"], nested)
             continue
 
-        if step["type"] == "cfg_import":
-            cfg_path = os.path.join(CONFIG_DIR, step["filename"])
-            if not os.path.exists(cfg_path):
-                raise HTTPException(
-                    status_code=404,
-                    detail={
-                        "status": "CONFIG_MISSING_ERROR",
-                        "message": f"Asset missing: {step['filename']}"
-                    }
-                )
-            try:
-                load_py_config(cfg_path, env)
-            except Exception:
-                error_trace = traceback.format_exc()
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "status": "CONFIG_PARSE_ERROR",
-                        "message": "Syntax compilation failure.",
-                        "details": str(error_trace)
-                    }
-                )
-            continue
+    return {
+        "steps": dialogues,
+    }
 
-        if step["type"] == "conditional_block":
-            for branch in step["branches"]:
-                if branch["mode"] in ("if", "elif"):
-                    try:
-                        condition_result = bool(eval(branch["condition"], {}, env))
-                    except Exception as eval_err:
-                        raise HTTPException(
-                            status_code=422,
-                            detail={
-                                "status": "CONDITIONAL_EVAL_ERROR",
-                                "message": f"Failed to evaluate condition: {branch['condition']}",
-                                "details": str(eval_err)
-                            }
-                        )
-                else:
-                    condition_result = True
 
-                if condition_result:
-                    for nested_step in reversed(branch["steps"]):
-                        session["cached_steps"].insert(session["step_index"], nested_step)
-                    break
-            continue
-
-        if step["type"] == "bg":
-            pending_bg = step["value"]
-            continue
-
-    return dialogues
+def _dispatch(step: dict, ctx: dict):
+    """Ask each executor in order to handle the step."""
+    for tag in EXECUTORS:
+        result = tag.execute(step, ctx)
+        if result is not None:
+            return result
+    return None
