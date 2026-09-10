@@ -1,0 +1,117 @@
+{
+    "DreamRun: choice block": {
+        "prefix": "choice",
+        "body": [
+            "[choice]",
+            "    [answer \"${1:Option 1}\"]",
+            "        $0",
+            "    [/answer]",
+            "",
+            "    [answer \"${2:Option 2}\"]",
+            "        ",
+            "    [/answer]",
+            "[/choice]"
+        ],
+        "description": "Branch menu with two answers"
+    },
+
+    "DreamRun: answer paired": {
+        "prefix": "answer",
+        "body": [
+            "[answer \"${1:Option text}\"]",
+            "    $0",
+            "[/answer]"
+        ],
+        "description": "A single paired answer option"
+    },
+
+    "DreamRun: ref block": {
+        "prefix": "ref",
+        "body": [
+            "[ref ${1:name}]",
+            "    $0",
+            "[/ref]"
+        ],
+        "description": "Isolated subroutine definition"
+    },
+
+    "DreamRun: if / elif / else": {
+        "prefix": "if",
+        "body": [
+            "[if ${1:condition}]",
+            "    $0",
+            "[elif ${2:other_condition}]",
+            "    ",
+            "[else]",
+            "    ",
+            "[/if]"
+        ],
+        "description": "Conditional block with elif and else"
+    },
+
+    "DreamRun: python block": {
+        "prefix": "python",
+        "body": [
+            "[python]",
+            "    $0",
+            "[/python]"
+        ],
+        "description": "Multi-line Python block"
+    },
+
+    "DreamRun: narrator line": {
+        "prefix": "narr",
+        "body": [
+            "> \"${1:Text}\""
+        ],
+        "description": "Narrator dialogue line"
+    },
+
+    "DreamRun: variable speaker line": {
+        "prefix": "speak",
+        "body": [
+            ":${1:hero}: > \"${2:Text}\""
+        ],
+        "description": "Dialogue line with variable speaker"
+    },
+
+    "DreamRun: literal speaker line": {
+        "prefix": "say",
+        "body": [
+            "${1:Name} > \"${2:Text}\""
+        ],
+        "description": "Dialogue line with literal speaker"
+    },
+
+    "DreamRun: background change": {
+        "prefix": "bg",
+        "body": [
+            "[bg \"/backgrounds/${1:name}.jpg\"/]"
+        ],
+        "description": "Change background"
+    },
+
+    "DreamRun: next act": {
+        "prefix": "next",
+        "body": [
+            "[next \"${1:chapter.dreamrun}\"/]"
+        ],
+        "description": "Switch to another act file"
+    },
+
+    "DreamRun: jump subroutine": {
+        "prefix": "jump",
+        "body": [
+            "[jump ${1:ref_name}/]"
+        ],
+        "description": "Subroutine call (returns after the block)"
+    },
+
+    "DreamRun: goto label": {
+        "prefix": "goto",
+        "body": [
+            "[goto ${1:ref_name}/]"
+        ],
+        "description": "Unconditional jump (does not return)"
+    }
+}

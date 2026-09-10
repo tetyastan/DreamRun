@@ -1,0 +1,48 @@
+{
+    "name": "dreamrun-scenarios",
+    "displayName": "DreamRun Scenarios Syntax Highlighting",
+    "description": "Syntax highlighting, snippets and language support for .dreamrun scenario files.",
+    "version": "1.0.0",
+    "publisher": "tetyastan",
+    "license": "MIT",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Programming Languages",
+        "Snippets"
+    ],
+    "keywords": [
+        "dreamrun",
+        "visual novel",
+        "scenario"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "dreamrun",
+                "aliases": [
+                    "DreamRun",
+                    "dreamrun"
+                ],
+                "extensions": [
+                    ".dreamrun"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "dreamrun",
+                "scopeName": "source.dreamrun",
+                "path": "./syntaxes/dreamrun.tmLanguage.json"
+            }
+        ],
+        "snippets": [
+            {
+                "language": "dreamrun",
+                "path": "./snippets/dreamrun.json"
+            }
+        ]
+    }
+}
