@@ -104,12 +104,24 @@
 <main class="container game-container">
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-        class="game-screen" 
-        style="background-image: url('{game.currentBg || 'placeholder.jpg'}')"
-        onclick={handleScreenClick}
-    >
-        <!-- The interface container intercepts clicks to handle layout isolation safely -->
+	<div
+        class="game-screen"
+        style={game.currentBg && !game.currentBg.startsWith('MISSING:') ? `background-image: url('${game.currentBg}')` : ''}
+		onclick={handleScreenClick}
+		>
+		
+		<!-- Render a clear debug watermark overlay if the background asset file is missing on the server -->
+		{#if game.currentBg && game.currentBg.startsWith('MISSING:')}
+		    <div class="missing-bg-placeholder" onclick={(e) => e.stopPropagation()}>
+			    <p class="error-title">Missing Background Asset</p>
+			    <p class="file-name">{game.currentBg.replace('MISSING:', '')}
+			    <p class="tip-text">
+				    Please place file under your /assets/backgrounds/ folder on backend server.
+			    </p>
+		    </div>
+		{/if}
+		
+		<!-- The interface container intercepts clicks to handle layout isolation safely -->
         <div class="interface-container" onclick={(e) => e.stopPropagation()}>
             <!-- Namebox -->
             {#if game.currentSpeaker}

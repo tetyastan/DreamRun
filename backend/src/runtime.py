@@ -4,7 +4,7 @@ import uuid
 import traceback
 from fastapi import HTTPException
 from src.core import Character
-from src.config import SESSIONS, SCENARIOS_DIR, CONFIG_DIR, PREFETCH_COUNT
+from src.config import SESSIONS, ASSETS_DIR, SCENARIOS_DIR, CONFIG_DIR, PREFETCH_COUNT
 from src.parser import parse_dreamrun_blocks
 
 
@@ -79,26 +79,65 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> lis
         # Visible frame types: check the limit before consuming
         if step["type"] == "choice":
             if len(dialogues) >= max_dialogues:
-                # Batch is full. Leave step_index on the choice so the
-                # next call picks it up.
+                # Batch is full. Leave step_index on the choice so the next call picks it up.
                 break
+
+            # --- VALIDATE BACKGROUND ASSET FOR CHOICE NODE ---
+            final_choice_bg = pending_bg
+            if pending_bg:
+                relative_path = pending_bg.replace("/assets/", "")
+                absolute_asset_path = os.path.join(ASSETS_DIR, relative_path)
+                if not os.path.exists(absolute_asset_path):
+                    final_choice_bg = f"MISSING:{os.path.basename(pending_bg)}"
+
             # Build the choice frame.
             options_payload = []
             for idx, opt in enumerate(step["options"]):
                 options_payload.append({"index": idx, "text": opt["text"]})
             dialogues.append({
                 "type": "choice",
-                "bg": pending_bg,
+                "bg": final_choice_bg,
                 "options": options_payload
             })
             # Do NOT advance step_index — choice must be re-visited by
             # /api/game/choice to know which branch to inject.
             break
 
+        if step["type"] == "audio":
+            audio_command = {
+                "modifier": step["modifier"],
+                "id": step["id"]
+            }
+            
+            # File validation layer for new entries
+            if step["modifier"] in ("sound", "music"):
+                path_value = step["path"]
+                if path_value.startswith("/assets/"):
+                    relative_path = path_value.replace("/assets/", "")
+                    absolute_asset_path = os.path.join(ASSETS_DIR, relative_path)
+                    
+                    # Validate asset existence on server hard drive disk
+                    if not os.path.exists(absolute_asset_path):
+                        path_value = f"MISSING:{os.path.basename(step['path'])}"
+                
+                audio_command.update({
+                    "path": path_value,
+                    "volume": step["volume"],
+                    "pitch": step["pitch"]
+                })
+            
+            elif step["modifier"] == "modify":
+                audio_command.update({
+                    "volume": step["volume"],
+                    "pitch": step["pitch"]
+                })
+
+            session["pending_audio"].append(audio_command)
+            continue
+
         if step["type"] == "dialogue":
             if len(dialogues) >= max_dialogues:
-                # Batch is full. Leave step_index on this dialogue so
-                # the next call resumes exactly here.
+                # Batch is full. Leave step_index on this dialogue so the next call resumes exactly here.
                 break
             # Consume the dialogue.
             session["step_index"] += 1
@@ -121,11 +160,19 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> lis
                 except Exception:
                     pass
 
+            # --- VALIDATE BACKGROUND ASSET FOR DIALOGUE NODE ---
+            final_dialogue_bg = pending_bg
+            if pending_bg:
+                relative_path = pending_bg.replace("/assets/", "")
+                absolute_asset_path = os.path.join(ASSETS_DIR, relative_path)
+                if not os.path.exists(absolute_asset_path):
+                    final_dialogue_bg = f"MISSING:{os.path.basename(pending_bg)}"
+
             dialogues.append({
                 "type": "dialogue",
                 "name": name,
                 "text": text,
-                "bg": pending_bg
+                "bg": final_dialogue_bg
             })
             pending_bg = None
             continue

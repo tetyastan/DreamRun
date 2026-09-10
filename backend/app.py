@@ -67,8 +67,9 @@ async def start_game():
         "step_index": 0,
         "runtime_env": {"Character": Character},
         "references": data["references"],
-        "return_stack": [],          # Stack of saved frames for [jump] calls
-        "last_request_time": 0       # Populated on first /next call
+        "return_stack": [],
+        "last_request_time": 0,
+        "pending_audio": []
     }
 
     if not os.path.exists(DEFAULT_VARS_FILE):

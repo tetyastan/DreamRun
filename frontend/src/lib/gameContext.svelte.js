@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/public';
 
 class GameState {
     publicApiUrl = env.PUBLIC_API_URL;
+    audioManager = new AudioManager();
 
     currentScreen = $state('MENU');
     sessionId = $state('');
@@ -91,7 +92,11 @@ class GameState {
 
     processBackground(bg) {
         if (!bg) return;
-        if (bg.startsWith('/assets')) {
+        
+        // Check if the server explicitly flagged this background asset as missing
+        if (bg.startsWith('MISSING:')) {
+            this.currentBg = bg; // Save the token verbatim for GameScreen UI parsing
+        } else if (bg.startsWith('/assets')) {
             this.currentBg = `${this.publicApiUrl}${bg}`;
         } else {
             this.currentBg = bg;
@@ -104,6 +109,11 @@ class GameState {
         if (dialogue.type === 'game_end') {
             this.handleGameEnd();
             return;
+        }
+
+        // Trigger step-attached audio tracks processor early before presentation rendering
+        if (dialogue.audio) {
+            this.audioManager.processAudioCommands(dialogue.audio, this.publicApiUrl);
         }
 
         // Catch dynamic choice node interruption block structures early
@@ -197,6 +207,7 @@ class GameState {
     }
 
     resetGameState() {
+        this.audioManager.clearAll();
         this.sessionId = '';
         this.currentBg = '';
         this.currentSpeaker = null;
@@ -211,6 +222,7 @@ class GameState {
     }
 
     handleGameEnd() {
+        this.audioManager.clearAll();
         this.currentScreen = 'MENU';
         this.pendingNextStep = false;
         this.isGameStarted = false;
@@ -315,6 +327,92 @@ class GameState {
             if (generation === this.requestGeneration) {
                 this.isLoading = false;
             }
+        }
+    }
+}
+
+class AudioManager {
+    constructor() {
+        this.activeAudioPool = new Map(); // Tracks active tracks: id -> HTMLAudioElement
+    }
+
+    /**
+     * Executes a batch array of server authoritative audio runtime commands.
+     */
+    processAudioCommands(commands, publicApiUrl) {
+        if (!Array.isArray(commands)) return;
+
+        for (const cmd of commands) {
+            const { modifier, id } = cmd;
+
+            if (modifier === 'sound' || modifier === 'music') {
+                // If the track is missing or invalid, print warning and continue safely
+                if (cmd.path.startsWith('MISSING:')) {
+                    console.warn(`[Audio Engine] Missing sound asset registration: ${cmd.path}`);
+                    continue;
+                }
+
+                // If an item with this ID is already playing, clear it out first
+                this.stopAudio(id);
+
+                // Resolve full URL
+                const srcUrl = cmd.path.startsWith('/assets') ? `${publicApiUrl}${cmd.path}` : cmd.path;
+                
+                const audio = new Audio(srcUrl);
+                audio.volume = cmd.volume ?? 1.0;
+                audio.playbackRate = cmd.pitch ?? 1.0;
+                
+                if (modifier === 'music') {
+                    audio.loop = true;
+                } else {
+                    // Automatically drop references when standard one-shot sounds complete
+                    audio.onended = () => {
+                        this.activeAudioPool.delete(id);
+                    };
+                }
+
+                audio.play().catch(err => console.error(`[Audio Engine] Playback failed for ID ${id}:`, err));
+                this.activeAudioPool.set(id, audio);
+            }
+
+            else if (modifier === 'modify') {
+                const audio = this.activeAudioPool.get(id);
+                if (audio) {
+                    if (cmd.volume !== null && cmd.volume !== undefined) audio.volume = cmd.volume;
+                    if (cmd.pitch !== null && cmd.pitch !== undefined) audio.playbackRate = cmd.pitch;
+                }
+            }
+
+            else if (modifier === 'pause') {
+                const audio = this.activeAudioPool.get(id);
+                if (audio) audio.pause();
+            }
+
+            else if (modifier === 'resume') {
+                const audio = this.activeAudioPool.get(id);
+                if (audio && audio.paused) {
+                    audio.play().catch(err => console.error(`[Audio Engine] Resume failed for ID ${id}:`, err));
+                }
+            }
+
+            else if (modifier === 'stop') {
+                this.stopAudio(id);
+            }
+        }
+    }
+
+    stopAudio(id) {
+        const audio = this.activeAudioPool.get(id);
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+            this.activeAudioPool.delete(id);
+        }
+    }
+
+    clearAll() {
+        for (const id of this.activeAudioPool.keys()) {
+            this.stopAudio(id);
         }
     }
 }

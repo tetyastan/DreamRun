@@ -384,6 +384,65 @@ def parse_dreamrun_blocks(file_path: str) -> dict:
             })
             continue
 
+        # [audio modifier "path" id "volume" "pitch"/]
+        # or
+        # [audio modifier id/]
+        #
+        # Audio control tag processor. Valid modifiers: sound, music, modify, pause, resume, stop.
+        audio_match = re.match(
+            r'^\[audio\s+(sound|music|modify|pause|resume|stop)\s+(.+)\]$', 
+            stripped
+        )
+        if audio_match:
+            modifier = audio_match.group(1)
+            args_content = audio_match.group(2).rstrip('/') # remove trailing close slash if any
+            args_content = args_content.strip()
+
+            target_step = {"type": "audio", "modifier": modifier}
+
+            if modifier in ("sound", "music"):
+                # Format expected: [audio sound "path" id "volume" "pitch"] or [audio sound "path" id "volume"] or [audio sound "path" id]
+                # Matches: "path" identifier followed by optional double-quoted volume and pitch
+                m = re.match(r'^"([^"]+)"\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+"([^"]+)")?(?:\s+"([^"]+)")?$', args_content)
+                if not m:
+                    raise ValueError(f"Syntax Error line {line_idx + 1}: Invalid arguments layout for audio initialization macro.")
+                
+                path = m.group(1).strip()
+                if path.startswith("/"):
+                    path = f"/assets{path}"
+
+                target_step.update({
+                    "path": path,
+                    "id": m.group(2).strip(),
+                    "volume": float(m.group(3)) if m.group(3) else 1.0,
+                    "pitch": float(m.group(4)) if m.group(4) else 1.0
+                })
+
+            elif modifier == "modify":
+                # Format expected: [audio modify id "volume" "pitch"] or [audio modify id "volume"]
+                m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s+"([^"]+)"(?:\s+"([^"]+)")?$', args_content)
+                if not m:
+                    raise ValueError(f"Syntax Error line {line_idx + 1}: Invalid arguments layout for audio modify macro.")
+                
+                target_step.update({
+                    "id": m.group(1).strip(),
+                    "volume": float(m.group(2)),
+                    "pitch": float(m.group(3)) if m.group(3) else None
+                })
+
+            elif modifier in ("pause", "resume", "stop"):
+                # Format expected: [audio pause id]
+                m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)$', args_content)
+                if not m:
+                    raise ValueError(f"Syntax Error line {line_idx + 1}: Audio utility tags require a valid unquoted ID identifier.")
+                
+                target_step.update({
+                    "id": m.group(1).strip()
+                })
+
+            append_step(target_step)
+            continue
+
         # --- DIALOGUE LINES ---
 
         # :var: > "text"
