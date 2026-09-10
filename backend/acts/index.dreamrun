@@ -1,25 +1,91 @@
-[bg "/bg.png"/]
+## --- 1. Initialize environment and assets ---
+[config "game_init"/]
+[bg "/backgrounds/intro_hall.jpg"/]
 
-[python "hero.money = 10000"/]
+# Inline python: attach a scalar to the hero Character.
+[python "hero.money = 150"/]
 
-:hero: > Some text here! My money count: {hero.money}
+# Multi-line python block: attach multiple attributes at once.
+# Indentation inside the block is normalized by textwrap.dedent.
+[python]
+    hero.has_key = False
+    hero.reputation = 0
+    hero.visited_altar = False
+[/python]
 
-[ref "123"]
-    [python "hero.money += 15000"/]
-    :hero: > Money now: {hero.money}
+## --- 2. Opening narration and variable speaker ---
+> "You open your eyes in the middle of a dimly lit stone hall."
+:hero: > "Where am I? Hm... There are only {hero.money} coins left in my pouch."
+
+## --- 3. Isolated subroutine ---
+# Never reached by the main flow. Entered via [jump check_status/]
+# and returns to the caller when the block finishes.
+[ref check_status]
+    > "[Status Check] The engine has invoked an isolated subroutine."
+    [if hero.reputation >= 1]
+        :hero: > "People whisper about me with respect."
+    [elif hero.reputation <= -1]
+        :hero: > "I have made enemies in this hall."
+    [else]
+        :hero: > "Nobody knows anything about me yet."
+    [/if]
 [/ref]
 
-:hero: > Money now: {hero.money}
-:hero: > Name is {name}.
-
-[jump "123"]
-
+## --- 4. First branching path menu ---
 [choice]
-    [answer "123"]
-        [jump "123"]
+    [answer "Search the old chest in the corner"]
+        > "You approach a dust-covered chest."
+        [python "hero.money += 400"/]
+        [python "hero.has_key = True"/]
+        :hero: > "Excellent! I found an old key and a handful of gold. Now I have {hero.money} coins."
     [/answer]
 
-    [answer "1234"]
+    [answer "Pray to the gods at the altar"]
+        [python]
+            hero.reputation += 1
+            hero.visited_altar = True
+        [/python]
+    [/answer]
+
+    [answer "Do nothing"]
         [pass/]
     [/answer]
 [/choice]
+
+## --- 5. Core execution continues after the choice ---
+> "Massive iron-bound doors appear ahead."
+
+## --- 6. Conditional logic evaluating the consequences of the choice ---
+[if hero.has_key == True]
+    > "You insert the discovered key into the keyhole."
+    > "The door gives way with a loud creak."
+    [bg "/backgrounds/secret_garden.jpg"/]
+
+    # Nested choice inside an if-branch.
+    [choice]
+        [answer "Check my reputation before leaving"]
+            # Subroutine call: enters [ref check_status], then returns here.
+            [jump check_status/]
+            :hero: > "Well, it is time to move on."
+            [next "chapter_one.dreamrun"/]
+        [/answer]
+
+        [answer "Run straight ahead"]
+            [next "chapter_one.dreamrun"/]
+        [/answer]
+    [/choice]
+
+[elif hero.money >= 500]
+    > "The door is locked, but a guard stands nearby, ready to take a bribe."
+    :hero: > "I have exactly {hero.money} coins. Take the payment and open up."
+    [python "hero.money -= 500"/]
+    [next "chapter_one.dreamrun"/]
+
+[else]
+    > "The doors are surprisingly unlocked. You push them open with your bare hands."
+    [bg "/backgrounds/secret_garden.jpg"/]
+    [next "chapter_one.dreamrun"/]
+[/if]
+
+# Unreachable placeholder — every branch above ends with [next].
+> "This line is unreachable placeholder text."

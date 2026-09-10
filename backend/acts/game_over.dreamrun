@@ -1,0 +1,29 @@
+[bg "/backgrounds/secret_garden.jpg"/]
+
+> "The garden fades behind you. A new horizon opens ahead."
+
+## --- Multi-line python: compute a summary value ---
+[python]
+    hero.total_wealth = hero.money
+    hero.summary_line = f"Final wealth: {hero.money} coins, reputation: {hero.reputation}"
+[/python]
+
+:hero: > "{hero.summary_line}"
+
+## --- Conditional epilogue based on accumulated state ---
+[if hero.reputation >= 2]
+    > "Songs will be sung about your kindness."
+[elif hero.reputation <= -1]
+    > "People will remember you with a shiver."
+[else]
+    > "You pass through unnoticed, as most travellers do."
+[/if]
+
+## --- [pass/] keeps the structure symmetrical without effect ---
+[pass/]
+
+> "Thank you for playing."
+
+## --- Loop back to the prologue for a fresh run ---
+# The runtime resets return_stack on change_act, so this is safe.
+[next "index.dreamrun"/]
