@@ -22,7 +22,6 @@
 [ref finale]
     > "The garden closes behind you. Your journey ends here."
     :hero: > "I have {hero.money} coins and reputation {hero.reputation}."
-    [next "game_over.dreamrun"/]
 [/ref]
 
 ## --- Branch based on the altar visit from Act 0 ---
