@@ -1,18 +1,15 @@
-# ====================================================================
-# DREAMRUN ADVANCED DEMO SCENARIO
-# Showcase file utilizing 100% of the current custom engine syntax layers
-# ====================================================================
+# DreamRun demo scenario
+
+[audio music "/debug.wav" dbg "0.1~2000" "1.0"/]
 
 ## --- [config] ---
 ## Loads a Python module into the runtime env. The module should
 ## define a variable named `debug_marker` (see config/debug_vars.py).
-[audio music "/debug.wav" dbg "0.5~2000" "1.0"/]
-
 [config "game_init.py"/]
 > "[config] game_init.py loaded."
 
 # Relative transition: smoothly fades volume from its current state (0.5) to 0.1 over 2000ms
-[audio modify dbg "0.1~2000" "1.0"/]
+[audio modify dbg "0.2~2000" "0~1000"/]
 
 ## --- [bg] with leading slash (should be rewritten to /assets/...) ---
 [bg "/backgrounds/debug_red.jpg"/]
@@ -31,8 +28,7 @@
 
 ## --- [python "inline"] single statement ---
 [python "debug_scalar = 15"/]
-# Requirement 2: Count from current Python state (0.0 dynamically assumed internally) up to N (15.0)
-:hero: > "[python inline] debug_scalar = {debug_scalar ~ ->15:2000} right now, but what it will be next?"
+:hero: > "[python inline] debug_scalar = {debug_scalar}"
 
 ## --- [python "inline"] with expression, no assignment ---
 [python "debug_scalar + 1"/]
@@ -51,41 +47,38 @@ debug_b = 20
     debug_c = 30
     debug_d = 40
 [/python]
-# Requirement 1: Count strictly from 0 to N (40) regardless of the actual engine variable value
-:hero: > "[python multiline indented] c={debug_c} d={debug_d ~ 0->40:1500}"
+:hero: > "[python multiline indented] c={debug_c} d={debug_d}"
 
 ## --- [python] ... [/python] with a comment inside ---
 [python]
-    # This is a Python comment, not a DreamRun comment.
     debug_e = 50
 [/python]
-# Requirement 3: Count down from a strict start bound (100) down to the current active Python value (50)
-:hero: > "[python multiline comment] e={debug_e ~ 100->:2500}"
+:hero: > "[python multiline comment] e={debug_e}"
 
 ## --- [pass/] ---
 [pass/]
 > "[pass] no-op executed."
 
 ## --- narrator line ---
-> "[narrator] plain narrator line."
+> "[narrator] Systems stabilized. Sandbox environment initialization complete."
 
 ## --- variable speaker, existing Character ---
-:hero: > "[var speaker] resolved to Character.name."
+:hero: > "[var speaker] Hello, Developer! I am bound to your localized character environment setup."
 
 ## --- variable speaker, unknown key (falls back to raw token) ---
-:ghost: > "[var speaker fallback] key 'ghost' missing."
+:ghost: > "[var speaker fallback] Warning: I am an unmapped tracking token acting as an echo."
 
 ## --- literal speaker ---
-Debugger > "[literal speaker] name shown verbatim."
+Debugger > "[literal speaker] Hardcoded system console string outputting diagnostics."
 
 ## --- literal speaker with spaces in name ---
-The Debugger > "[literal speaker spaces] multi-word name."
+The Core Engine > "[literal speaker spaces] Unified system layout performing compilation checks."
 
 ## --- placeholder substitution from env ---
-:hero: > "[placeholder] scalar is {debug_scalar}, sum is {debug_a}."
+:hero: > "[placeholder] Tracking scalar value is currently {debug_scalar}, while matrix sum equals {debug_a}."
 
 ## --- placeholder with unknown key (should not crash) ---
-:hero: > "[placeholder unknown] value is {missing_key}."
+:hero: > "[placeholder unknown] Missing identifier variable fallback returns: {missing_key}."
 
 ## --- [jump] into a simple ref ---
 [jump debug_simple_ref/]
@@ -95,34 +88,34 @@ The Debugger > "[literal speaker spaces] multi-word name."
 ## The ref itself ends with [goto debug_final_ref/], so control
 ## leaves this act entirely.
 [choice]
-    [answer "Continue to goto test"]
+    [answer "Route Execution Flow To Next Step"]
         [goto debug_goto_target/]
     [/answer]
-    [answer "Skip goto test"]
+    [answer "Bypass Flow Routing Stage"]
         > "[choice] skipped goto test."
     [/answer]
 [/choice]
 
-Nestor > "[after choice] this line is reached only if 'Skip' was chosen."
+The Architect > "[after choice] Execution sequence continues sequentially since routing was bypassed."
 
 ## --- fall-through target for the choice above ---
 [ref debug_final_ref]
-    > "[goto target] final ref reached."
+    > "[goto target] Execution pipeline completed. Swapping file systems."
     [next "debug.dreamrun"/]
 [/ref]
 
 ## --- [ref] simple subroutine with return ---
 [ref debug_simple_ref]
-    > "[ref debug_simple_ref] entered."
+    > "[ref debug_simple_ref] Subroutine hook activated. Evaluating structural expressions..."
     [if 1 == 1]
-        > "[ref debug_simple_ref][if 1==1] true branch."
+        > "[ref debug_simple_ref][if 1==1] Expression validated as true. Returning execution pointer."
     [/if]
 [/ref]
 
 ## --- [ref] goto target ---
 [ref debug_goto_target]
-    > "[ref debug_goto_target] entered via goto."
-    > "[ref debug_goto_target] will now jump to debug_final_ref."
+    > "[ref debug_goto_target] Route hijacked via hard unconditional jump tracking."
+    > "[ref debug_goto_target] Transferring control state to the termination pointer."
     [goto debug_final_ref/]
     > "[ref debug_goto_target] UNREACHABLE."
 [/ref]

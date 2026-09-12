@@ -113,5 +113,13 @@
             "[goto ${1:ref_name}/]"
         ],
         "description": "Unconditional jump (does not return)"
+    },
+
+    "DreamRun: audio": {
+        "prefix": "audio",
+        "body": [
+            "[audio ${1|sound,music,modify,pause,resume,stop|} \"${2:/path/file.wav}\" ${3:id} \"${4:1.0}\" \"${5:1.0}\"/]"
+        ],
+        "description": "Play, modify, pause, resume or stop an audio track"
     }
 }

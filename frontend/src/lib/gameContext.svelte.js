@@ -534,27 +534,30 @@ class AudioManager {
         const entry = this.activeAudioPool.get(id);
         if (!entry) return;
 
+        const currentPhysicalPitch = entry.source ? entry.source.playbackRate.value : (entry.lastPitch ?? 1.0);
+        const currentPhysicalVolume = entry.gainNode ? entry.gainNode.gain.value : (entry.lastVolume ?? 1.0);
+
         // For modify operations, if the server payload doesn't supply a 'from' boundary,
         // we explicitly inject our safely cached 'lastPitch' / 'lastVolume' state markers 
         // into the payload parameters before running the timeline scheduler.
         if (entry.source && cmd.pitch !== null && cmd.pitch !== undefined) {
             let pitchPayload = cmd.pitch;
             if (typeof pitchPayload === 'object' && pitchPayload.from === undefined) {
-                pitchPayload = { ...pitchPayload, from: entry.lastPitch ?? 1.0 };
+                pitchPayload = { ...pitchPayload, from: currentPhysicalPitch };
             }
             
-            this._applyParam(entry.source.playbackRate, pitchPayload, entry.lastPitch ?? 1.0);
-            entry.lastPitch = this._resolveScalar(cmd.pitch, entry.lastPitch ?? 1.0);
+            this._applyParam(entry.source.playbackRate, pitchPayload, currentPhysicalPitch);
+            entry.lastPitch = this._resolveScalar(cmd.pitch, currentPhysicalPitch);
         }
         
         if (entry.gainNode && cmd.volume !== null && cmd.volume !== undefined) {
             let volumePayload = cmd.volume;
             if (typeof volumePayload === 'object' && volumePayload.from === undefined) {
-                volumePayload = { ...volumePayload, from: entry.lastVolume ?? 1.0 };
+                volumePayload = { ...volumePayload, from: currentPhysicalVolume };
             }
             
-            this._applyParam(entry.gainNode.gain, volumePayload, entry.lastVolume ?? 1.0);
-            entry.lastVolume = this._resolveScalar(cmd.volume, entry.lastVolume ?? 1.0);
+            this._applyParam(entry.gainNode.gain, volumePayload, currentPhysicalVolume);
+            entry.lastVolume = this._resolveScalar(cmd.volume, currentPhysicalVolume);
         }
     }
 
@@ -580,25 +583,31 @@ class AudioManager {
      */
     _applyParam(param, payload, fallback) {
         const safe = (x, fb) => (typeof x === 'number' && Number.isFinite(x)) ? x : fb;
+        const now = this.audioContext.currentTime;
 
         if (payload === null || payload === undefined) {
+            // Relative instant modification: clamps volume or pitch without transitions
+            param.cancelScheduledValues(now);
             param.value = safe(fallback, 0);
             return;
         }
 
         if (typeof payload === 'number') {
+            // Relative instant modification: clamps volume or pitch without transitions
+            param.cancelScheduledValues(now);
             param.value = safe(payload, safe(fallback, 0));
             return;
         }
 
         if (typeof payload !== 'object') {
+            // Relative instant modification: clamps volume or pitch without transitions
+            param.cancelScheduledValues(now);
             param.value = safe(fallback, 0);
             return;
         }
 
         // Animation form: { from, to, duration_ms }
         if ('to' in payload) {
-            const now = this.audioContext.currentTime;
             
             // Trust the fallback value (passed from our cached lastVolume/lastPitch memory slot) 
             // if payload.from is explicitly missing, avoiding broken timeline jumps.
@@ -623,16 +632,26 @@ class AudioManager {
         }
 
         if ('value' in payload) {
+            // Relative instant modification: clamps volume or pitch without transitions
+            param.cancelScheduledValues(now);
             param.value = safe(payload.value, safe(fallback, 0));
             return;
         }
 
+        // Relative instant modification: clamps volume or pitch without transitions
+        param.cancelScheduledValues(now);
         param.value = safe(fallback, 0);
     }
+
 
     _pauseTrack(id) {
         const entry = this.activeAudioPool.get(id);
         if (!entry || !entry.source) return;
+
+        entry.lastPitch = entry.source.playbackRate.value;
+        if (entry.gainNode) {
+            entry.lastVolume = entry.gainNode.gain.value;
+        }
 
         // Web Audio does not expose pause/resume on a source node.
         // The standard approach: record the elapsed offset, stop the

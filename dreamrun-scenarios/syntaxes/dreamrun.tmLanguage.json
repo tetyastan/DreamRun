@@ -84,6 +84,27 @@
                     }
                 },
                 {
+                    "match": "\\[(audio)\\s+(sound|music|modify|pause|resume|stop)\\s+(\"[^\"]*\")\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(\"[^\"]*\"))?(?:\\s+(\"[^\"]*\"))?\\s*/?\\]",
+                    "captures": {
+                        "1": { "name": "keyword.control.tag.dreamrun" },
+                        "2": { "name": "keyword.control.audio-modifier.dreamrun" },
+                        "3": { "name": "string.quoted.double.path.dreamrun" },
+                        "4": { "name": "variable.other.identifier.dreamrun" },
+                        "5": { "name": "string.quoted.double.audio.dreamrun" },
+                        "6": { "name": "string.quoted.double.audio.dreamrun" }
+                    }
+                },
+                {
+                    "match": "\\[(audio)\\s+(modify|pause|resume|stop)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(\"[^\"]*\"))?(?:\\s+(\"[^\"]*\"))?\\s*/?\\]",
+                    "captures": {
+                        "1": { "name": "keyword.control.tag.dreamrun" },
+                        "2": { "name": "keyword.control.audio-modifier.dreamrun" },
+                        "3": { "name": "variable.other.identifier.dreamrun" },
+                        "4": { "name": "string.quoted.double.audio.dreamrun" },
+                        "5": { "name": "string.quoted.double.audio.dreamrun" }
+                    }
+                },
+                {
                     "match": "\\[(answer)\\s+(\"[^\"]*\")\\]",
                     "captures": {
                         "1": { "name": "keyword.control.tag.dreamrun" },
