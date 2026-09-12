@@ -1,6 +1,6 @@
 import os
-from src.tags import PARSERS
 from src.tags.base import TagParseResult
+from src.tags import ALL_TAGS
 
 
 def parse_dreamrun_blocks(file_path: str) -> dict:
@@ -41,7 +41,7 @@ def parse_dreamrun_blocks(file_path: str) -> dict:
             continue
 
         handled = False
-        for tag in PARSERS:
+        for tag in ALL_TAGS:
             result: TagParseResult = tag.parse(line, line_idx, ctx)
 
             if result.scope_open:

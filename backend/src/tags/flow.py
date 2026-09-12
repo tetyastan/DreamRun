@@ -94,3 +94,41 @@ class GotoTag(BaseTag):
         if step.get("type") != "goto":
             return None
         return "goto"
+
+class PauseTag(BaseTag):
+    """
+    Handles the [pause ...] expression tag with an optional bypass block:
+    
+        [pause 2000/]
+        [pause 2000 block/]
+    
+    Clamps sequence iteration steps on the frontend client timeline.
+    If 'block' argument is present, user-driven click skips are explicitly prevented.
+    """
+    name = "pause"
+
+    # Match format [pause 2000/] or [pause 2000 block/]
+    PATTERN = re.compile(r'^\[pause\s+(?P<duration>\d+)(?:\s+(?P<block>block))?/\]$')
+
+    def parse(self, line: str, line_idx: int, ctx: dict) -> TagParseResult:
+        m = self.PATTERN.match(line)
+        if not m:
+            return TagParseResult(consumed=False)
+
+        duration_ms = int(m.group("duration"))
+        is_blocked = m.group("block") is not None
+
+        step = {
+            "type": "pause",
+            "duration": duration_ms,
+            "block": is_blocked
+        }
+
+        return TagParseResult(step=step, consumed=True)
+
+    def execute(self, step: dict, ctx: dict):
+        if step.get("type") != "pause":
+            return None
+            
+        # Return a trigger tuple to force the runtime loop to emit this structural frame
+        return ("frame", step)

@@ -15,6 +15,9 @@ class GameState {
 
     currentChoices = $state([]);
 
+    pauseActive = $state(false);
+    pauseTimerId = null;
+
     playerVariables = $state({});
     textSpeed = $state(7);
 
@@ -79,7 +82,54 @@ class GameState {
         this.dialogueQueue = [];
         this.currentTextParts = [{ kind: 'text', value: '' }];
         this.currentChoices = [];
+        this.currentDialogue = null;
+        if (this.pauseTimerId) {
+            clearTimeout(this.pauseTimerId);
+            this.pauseTimerId = null;
+        }
+        this.pauseActive = false;
         this.sessionId = '';
+    }
+
+    resetGameState() {
+        this.audioManager.clearAll();
+        this.sessionId = '';
+        this.currentBg = '';
+        this.currentSpeaker = null;
+        this.currentTextParts = [{ kind: 'text', value: '' }];
+        this.currentChoices = [];
+        this.currentDialogue = null;
+        if (this.pauseTimerId) {
+            clearTimeout(this.pauseTimerId);
+            this.pauseTimerId = null;
+        }
+        this.pauseActive = false;
+        this.playerVariables = {};
+        this.pendingNextStep = false;
+        this.isGameStarted = false;
+        this.dialogueQueue = [];
+        this.hasNext = false;
+        this.errorData = { status: 'None', message: 'None', details: 'None' };
+    }
+
+    handleGameEnd() {
+        this.audioManager.clearAll();
+        this.currentScreen = 'MENU';
+        this.pendingNextStep = false;
+        this.isGameStarted = false;
+        this.currentBg = '';
+        this.currentSpeaker = null;
+        this.currentTextParts = [{ kind: 'text', value: '' }];
+        this.dialogueQueue = [];
+        this.currentChoices = [];
+        this.currentDialogue = null;
+        if (this.pauseTimerId) {
+            clearTimeout(this.pauseTimerId);
+            this.pauseTimerId = null;
+        }
+        this.pauseActive = false;
+        this.sessionId = '';
+        this.hasNext = false;
     }
 
     async parseAndShowBackendError(response) {
@@ -131,6 +181,8 @@ class GameState {
     processDialogue(dialogue) {
         if (!dialogue) return;
 
+        this.currentDialogue = dialogue;
+
         if (dialogue.type === 'game_end') {
             this.handleGameEnd();
             return;
@@ -148,12 +200,41 @@ class GameState {
             return;
         }
 
+        if (dialogue.type === 'pause') {
+            if (dialogue.bg) this.processBackground(dialogue.bg);
+
+            this.currentSpeaker = null;
+            this.currentText = '';
+            this.currentChoices = [];
+
+            const blockMode = dialogue.block === true;
+            const duration = dialogue.duration || 0;
+
+            // Enter a pause state. While pauseActive is true, no other
+            // transition can advance the scenario.
+            this.pauseActive = true;
+            this.pendingNextStep = !blockMode; // only skippable pauses accept clicks
+            this.isLoading = true;             // freeze the loading spinner semantics too
+
+            if (this.pauseTimerId) clearTimeout(this.pauseTimerId);
+
+            this.pauseTimerId = setTimeout(() => {
+                this.pauseTimerId = null;
+                this.pauseActive = false;
+                this.isLoading = false;
+                this.pendingNextStep = true;
+                this.nextStep();
+            }, duration);
+
+            return;
+        }
+
         if (dialogue.bg) {
             this.processBackground(dialogue.bg);
         }
 
         this.currentSpeaker = dialogue.name || null;
-        this.currentText = dialogue.text || ''; // FIXED: Binds plain processed string text
+        this.currentText = dialogue.text || ''; // Binds plain processed string text
         this.currentChoices = [];
 
         this.pendingNextStep = true;
@@ -193,7 +274,7 @@ class GameState {
             return;
         }
 
-        const filteredNodes = steps.filter(step => step && (step.type === 'dialogue' || step.type === 'choice'));
+        const filteredNodes = steps.filter(step => step && (step.type === 'dialogue' || step.type === 'choice' || step.type === 'pause'));
         if (filteredNodes.length === 0) {
             this.handleGameEnd();
             return;
@@ -246,36 +327,10 @@ class GameState {
         }
     }
 
-    resetGameState() {
-        this.audioManager.clearAll();
-        this.sessionId = '';
-        this.currentBg = '';
-        this.currentSpeaker = null;
-        this.currentTextParts = [{ kind: 'text', value: '' }];
-        this.currentChoices = [];
-        this.playerVariables = {};
-        this.pendingNextStep = false;
-        this.isGameStarted = false;
-        this.dialogueQueue = [];
-        this.hasNext = false;
-        this.errorData = { status: 'None', message: 'None', details: 'None' };
-    }
-
-    handleGameEnd() {
-        this.audioManager.clearAll();
-        this.currentScreen = 'MENU';
-        this.pendingNextStep = false;
-        this.isGameStarted = false;
-        this.currentBg = '';
-        this.currentSpeaker = null;
-        this.currentTextParts = [{ kind: 'text', value: '' }];
-        this.dialogueQueue = [];
-        this.currentChoices = [];
-        this.sessionId = '';
-        this.hasNext = false;
-    }
-
     async nextStep() {
+        // Pause is a hard barrier: nothing advances the scenario until
+        // the pause timer expires. Even queued frames wait.
+        if (this.pauseActive) return;
         if (!this.isGameStarted) return;
         if (this.currentChoices.length > 0) return;
 
@@ -326,6 +381,22 @@ class GameState {
     }
 
     async handleClick() {
+        // If a skippable pause is active, allow the click to end it early.
+        if (this.pauseActive && !this.currentDialogue?.block) {
+            if (this.pauseTimerId) {
+                clearTimeout(this.pauseTimerId);
+                this.pauseTimerId = null;
+            }
+            this.pauseActive = false;
+            this.isLoading = false;
+            this.pendingNextStep = true;
+            await this.nextStep();
+            return;
+        }
+
+        // Non-skippable pause: swallow the click.
+        if (this.pauseActive) return;
+
         if (this.currentChoices.length > 0) return;
         if (!this.pendingNextStep) return;
         if (this.isLoading) return;

@@ -4,7 +4,7 @@ from src.config import (
     SESSIONS, SCENARIOS_DIR, PREFETCH_COUNT,
 )
 from src.parser import parse_dreamrun_blocks
-from src.tags import EXECUTORS
+from src.tags import ALL_TAGS
 from src.tags.visual import BackgroundTag
 from src.tags.config_tag import ConfigTag
 
@@ -82,7 +82,7 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
         step = session["cached_steps"][session["step_index"]]
 
         # --- Visible frames: enforce prefetch limit BEFORE consuming ---
-        if step["type"] in ("dialogue", "choice"):
+        if step["type"] in ("dialogue", "choice", "pause"):
             if len(dialogues) >= max_dialogues:
                 break
 
@@ -111,6 +111,24 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
                 frame = result[1]
                 frame["bg"] = BackgroundTag.validate(session.get("_pending_bg"))
                 frame["audio"] = session.get("_pending_audio", [])
+                session["_pending_audio"] = []
+                session["_pending_bg"] = None
+                dialogues.append(frame)
+            continue
+
+        # --- Pause consumes the pointer and emits a timed screen frame ---
+        if step["type"] == "pause":
+            session["step_index"] += 1
+            result = _dispatch(step, ctx)
+            
+            # Trust the tuple configuration payload shape explicitly checking index [0]
+            if isinstance(result, tuple) and result[0] == "frame":
+                frame = result[1]
+                frame["bg"] = BackgroundTag.validate(session.get("_pending_bg"))
+                frame["audio"] = session.get("_pending_audio", [])
+                # Safely transfer the input interaction block flag parameter
+                frame["block"] = step.get("block", False)
+                
                 session["_pending_audio"] = []
                 session["_pending_bg"] = None
                 dialogues.append(frame)
@@ -183,7 +201,7 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
 
 def _dispatch(step: dict, ctx: dict):
     """Ask each executor in order to handle the step."""
-    for tag in EXECUTORS:
+    for tag in ALL_TAGS:
         result = tag.execute(step, ctx)
         if result is not None:
             return result

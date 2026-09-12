@@ -57,6 +57,14 @@
                     }
                 },
                 {
+                    "match": "\\[(pause)\\s+(\\d+)(?:\\s+(block))?\\s*/\\]",
+                    "captures": {
+                        "1": { "name": "keyword.control.tag.dreamrun" },
+                        "2": { "name": "constant.numeric.duration.dreamrun" },
+                        "3": { "name": "keyword.control.modifier.dreamrun" }
+                    }
+                },
+                {
                     "match": "\\[(pass)\\s*/\\]",
                     "captures": {
                         "1": { "name": "keyword.control.tag.dreamrun" }

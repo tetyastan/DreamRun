@@ -10,6 +10,8 @@
 
 # Relative transition: smoothly fades volume from its current state (0.5) to 0.1 over 2000ms
 [audio modify dbg "0.2~2000" "0~1000"/]
+[pause 1000 block/]
+[audio stop dbg/]
 
 ## --- [bg] with leading slash (should be rewritten to /assets/...) ---
 [bg "/backgrounds/debug_red.jpg"/]
