@@ -22,6 +22,11 @@ class GameState {
     isAnimating = $state(false);
     isLoading = $state(false);
     pendingNextStep = $state(false);
+
+    // Smooth loader state handling: tracking whether loading visibility should activate
+    showLoadingUI = $state(false);
+    loadingTimeoutId = null;
+
     isGameStarted = $state(false);
     dialogueQueue = $state([]);
     requestGeneration = 0;
@@ -40,6 +45,27 @@ class GameState {
         }
     }
 
+    startLoadingState() {
+        this.isLoading = true;
+        this.showLoadingUI = false;
+        if (this.loadingTimeoutId) clearTimeout(this.loadingTimeoutId);
+        
+        this.loadingTimeoutId = setTimeout(() => {
+            if (this.isLoading) {
+                this.showLoadingUI = true;
+            }
+        }, 2000);
+    }
+
+    stopLoadingState() {
+        this.isLoading = false;
+        this.showLoadingUI = false;
+        if (this.loadingTimeoutId) {
+            clearTimeout(this.loadingTimeoutId);
+            this.loadingTimeoutId = null;
+        }
+    }
+
     getVariable(key, fallback = null) {
         return this.playerVariables[key] !== undefined ? this.playerVariables[key] : fallback;
     }
@@ -47,7 +73,7 @@ class GameState {
     showError(status, message, details) {
         this.errorData = { status, message, details };
         this.currentScreen = 'ERROR';
-        this.isLoading = false;
+        this.stopLoadingState();
         this.pendingNextStep = false;
         this.isGameStarted = false;
         this.dialogueQueue = [];
@@ -134,10 +160,31 @@ class GameState {
         this.isGameStarted = true;
     }
 
-    processBlock(steps) {
+    async processBlock(steps) {
         if (!Array.isArray(steps) || steps.length === 0) {
             this.handleGameEnd();
             return;
+        }
+
+        try {
+            const audioTargets = [];
+            for (const step of steps) {
+                if (step && Array.isArray(step.audio)) {
+                    for (const cmd of step.audio) {
+                        if ((cmd.modifier === 'sound' || cmd.modifier === 'music') && cmd.path) {
+                            if (!cmd.path.startsWith('MISSING:')) {
+                                const url = cmd.path.startsWith('/assets') ? `${this.publicApiUrl}${cmd.path}` : cmd.path;
+                                audioTargets.push(url);
+                            }
+                        }
+                    }
+                }
+            }
+            if (audioTargets.length > 0) {
+                await this.audioManager.preloadAudioBuffers(audioTargets);
+            }
+        } catch (err) {
+            console.warn('[DreamRun][preload] Non-blocking asset hydration fallback triggered:', err);
         }
 
         if (steps[0] && steps[0].type === 'choice') {
@@ -158,7 +205,7 @@ class GameState {
 
     async selectChoice(choiceIndex) {
         if (this.isLoading) return;
-        this.isLoading = true;
+        this.startLoadingState();
 
         const generation = this.requestGeneration;
 
@@ -183,7 +230,7 @@ class GameState {
             if (data.variables) this.playerVariables = data.variables;
 
             this.currentChoices = [];
-            this.processBlock(data.steps);
+            await this.processBlock(data.steps);
 
         } catch (err) {
             if (generation !== this.requestGeneration) return;
@@ -194,7 +241,7 @@ class GameState {
             );
         } finally {
             if (generation === this.requestGeneration) {
-                this.isLoading = false;
+                this.stopLoadingState();
             }
         }
     }
@@ -241,7 +288,7 @@ class GameState {
         if (this.isLoading) return;
         if (!this.sessionId) return;
 
-        this.isLoading = true;
+        this.startLoadingState();
         this.pendingNextStep = false;
 
         const generation = this.requestGeneration;
@@ -262,7 +309,7 @@ class GameState {
             const data = await response.json();
             if (data.variables) this.playerVariables = data.variables;
 
-            this.processBlock(data.steps);
+            await this.processBlock(data.steps);
 
         } catch (err) {
             if (generation !== this.requestGeneration) return;
@@ -273,7 +320,7 @@ class GameState {
             );
         } finally {
             if (generation === this.requestGeneration) {
-                this.isLoading = false;
+                this.stopLoadingState();
             }
         }
     }
@@ -295,7 +342,7 @@ class GameState {
         const generation = this.requestGeneration;
 
         this.resetGameState();
-        this.isLoading = true;
+        this.startLoadingState();
 
         try {
             const response = await fetch(`${this.publicApiUrl}/api/game/start`, { method: 'POST' });
@@ -311,14 +358,14 @@ class GameState {
             this.playerVariables = data.variables || {};
             this.currentScreen = 'GAME';
 
-            this.processBlock(data.steps);
+            await this.processBlock(data.steps);
 
         } catch (err) {
             if (generation !== this.requestGeneration) return;
             this.showError('FETCH_ERROR', 'Backend connection error.', err?.message || String(err));
         } finally {
             if (generation === this.requestGeneration) {
-                this.isLoading = false;
+                this.stopLoadingState();
             }
         }
     }
@@ -359,6 +406,17 @@ class AudioManager {
     // ---------------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------------
+
+    // Pre-loading pipeline: concurrently resolves, streams, and caches high-density binary arrays over unstable connections
+    async preloadAudioBuffers(urls) {
+        if (typeof window === 'undefined') return;
+        await this._ensureContext();
+        
+        const tasks = urls.map(url => this._loadBuffer(url).catch(e => {
+            console.error(`[DreamRun][preload] Aggregation failure on endpoint target: ${url}`, e);
+        }));
+        await Promise.all(tasks);
+    }
 
     async processAudioCommands(commands, publicApiUrl) {
         if (!Array.isArray(commands) || commands.length === 0) {
