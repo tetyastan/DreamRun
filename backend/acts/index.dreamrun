@@ -1,123 +1,25 @@
-# DreamRun demo scenario
-
-[audio music "/debug.wav" dbg "0.1~2000" "1.0"/]
-
-## --- [config] ---
-## Loads a Python module into the runtime env. The module should
-## define a variable named `debug_marker` (see config/debug_vars.py).
-[config "game_init.py"/]
-> "[config] game_init.py loaded."
-
-# Relative transition: smoothly fades volume from its current state (0.5) to 0.1 over 2000ms
-[audio modify dbg "0.2~2000" "0~1000"/]
-[pause 1000 block/]
-[audio stop dbg/]
-
-## --- [bg] with leading slash (should be rewritten to /assets/...) ---
-[bg "/backgrounds/debug_red.jpg"/]
-> "[bg] slash path set."
-
-# Relative instant modification: clamps volume to 0.15 without transitions
-[audio modify dbg "0.15" "1.0"/]
-
-## --- [bg] without leading slash (should be used as-is) ---
-[bg "http://example.invalid/blue.jpg"/]
-> "[bg] absolute URL set."
-
-## --- [bg] with non-existent local file (should be marked MISSING) ---
-[bg "/backgrounds/does_not_exist.jpg"/]
-> "[bg] missing file check."
-
-## --- [python "inline"] single statement ---
-[python "debug_scalar = 15"/]
-:hero: > "[python inline] debug_scalar = {debug_scalar}"
-
-## --- [python "inline"] with expression, no assignment ---
-[python "debug_scalar + 1"/]
-:hero: > "[python inline expr] still {debug_scalar}"
-
-## --- [python] ... [/python] multi-line, no leading indent ---
 [python]
-debug_a = 10
-debug_b = 20
+    # 1. Setup file assets parameters references
+    lab_bg = "/bg/cyberpunk_lab.png"
+    theme_music = "/audio/ambient_loop.wav"
+    
+    # 2. Wire native numeric curves objects
+    fade_in_track = Ramp(0.1, 3000, 0)
+    quiet_volume = Ramp(0, 1500)
+    
+    # 3. Dynamic attributes definition values
+    actor_layer = 12
 [/python]
-# Plain static substitution example
-:hero: > "[python multiline flat] a={debug_a} b={debug_b}"
 
-## --- [python] ... [/python] multi-line, indented ---
-[python]
-    debug_c = 30
-    debug_d = 40
-[/python]
-:hero: > "[python multiline indented] c={debug_c} d={debug_d}"
+# Play music utilizing our target Ramp instance object seamlessly
+[audio music {theme_music} ambient_track {fade_in_track} 1.0/]
 
-## --- [python] ... [/python] with a comment inside ---
-[python]
-    debug_e = 50
-[/python]
-:hero: > "[python multiline comment] e={debug_e}"
+# Render backdrop layer and layout positions cleanly via curly braces
+[image show {lab_bg} background_canvas 0 "" ""/]
 
-## --- [pass/] ---
-[pass/]
-> "[pass] no-op executed."
+:tester: > "Testing dialogue."
 
-## --- narrator line ---
-> "[narrator] Systems stabilized. Sandbox environment initialization complete."
+# Modify mixing coefficients values securely down the pipeline
+[audio modify ambient_track {quiet_volume} 1.0/]
 
-## --- variable speaker, existing Character ---
-:hero: > "[var speaker] Hello, Developer! I am bound to your localized character environment setup."
-
-## --- variable speaker, unknown key (falls back to raw token) ---
-:ghost: > "[var speaker fallback] Warning: I am an unmapped tracking token acting as an echo."
-
-## --- literal speaker ---
-Debugger > "[literal speaker] Hardcoded system console string outputting diagnostics."
-
-## --- literal speaker with spaces in name ---
-The Core Engine > "[literal speaker spaces] Unified system layout performing compilation checks."
-
-## --- placeholder substitution from env ---
-:hero: > "[placeholder] Tracking scalar value is currently {debug_scalar}, while matrix sum equals {debug_a}."
-
-## --- placeholder with unknown key (should not crash) ---
-:hero: > "[placeholder unknown] Missing identifier variable fallback returns: {missing_key}."
-
-## --- [jump] into a simple ref ---
-[jump debug_simple_ref/]
-> "[jump] returned from debug_simple_ref."
-
-## --- [goto] into a ref (no return) ---
-## The ref itself ends with [goto debug_final_ref/], so control
-## leaves this act entirely.
-[choice]
-    [answer "Route Execution Flow To Next Step"]
-        [goto debug_goto_target/]
-    [/answer]
-    [answer "Bypass Flow Routing Stage"]
-        > "[choice] skipped goto test."
-    [/answer]
-[/choice]
-
-The Architect > "[after choice] Execution sequence continues sequentially since routing was bypassed."
-
-## --- fall-through target for the choice above ---
-[ref debug_final_ref]
-    > "[goto target] Execution pipeline completed. Swapping file systems."
-    [next "debug.dreamrun"/]
-[/ref]
-
-## --- [ref] simple subroutine with return ---
-[ref debug_simple_ref]
-    > "[ref debug_simple_ref] Subroutine hook activated. Evaluating structural expressions..."
-    [if 1 == 1]
-        > "[ref debug_simple_ref][if 1==1] Expression validated as true. Returning execution pointer."
-    [/if]
-[/ref]
-
-## --- [ref] goto target ---
-[ref debug_goto_target]
-    > "[ref debug_goto_target] Route hijacked via hard unconditional jump tracking."
-    > "[ref debug_goto_target] Transferring control state to the termination pointer."
-    [goto debug_final_ref/]
-    > "[ref debug_goto_target] UNREACHABLE."
-[/ref]
+[pause 5000 block/]

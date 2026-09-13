@@ -1,4 +1,6 @@
 import re
+import os
+from fastapi import HTTPException
 from src.tags.base import BaseTag, TagParseResult
 
 class PassTag(BaseTag):
@@ -19,28 +21,42 @@ class PassTag(BaseTag):
 
 class NextTag(BaseTag):
     """
-    Handles [next "file"/] — full act swap.
-
-    The runtime replaces cached_steps with the parsed contents of the
-    new act, clears the return stack, and stops the current batch so
-    the client receives a clean boundary.
+    Handles [next "file"/] — full act swap with structural validation layers.
     """
     name = "next"
-    PATTERN = re.compile(r'^\[next\s+"(.*)"\s*/?\]$')
+    PATTERN = re.compile(r'^\[next\s+(?:"(?P<path>[^"]+)"|(?P<var>\{[A-Za-z0-9_\.]+\}))\s*/?\]$')
 
-    def parse(self, line, line_idx, ctx):
+    def parse(self, line: str, line_idx: int, ctx: dict) -> TagParseResult:
         m = self.PATTERN.match(line)
         if not m:
             return TagParseResult(consumed=False)
+        
+        path_token = m.group("path") if m.group("path") is not None else m.group("var")
         return TagParseResult(
-            step={"type": "change_act", "next_act_path": m.group(1).strip()},
+            step={"type": "change_act", "next_act_path": path_token.strip()},
             consumed=True,
         )
 
-    def execute(self, step, ctx):
+    def execute(self, step: dict, ctx: dict):
         if step.get("type") != "change_act":
             return None
-        return "change_act"  # signal the runtime to perform the swap
+            
+        from src.config import SCENARIOS_DIR
+        target_name = os.path.basename(step["next_act_path"])
+        next_file = os.path.join(SCENARIOS_DIR, target_name)
+        
+        # Enforce file existence check directly inside the execution step handler
+        if not os.path.exists(next_file):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "status": "CHAPTER_MISSING_ERROR",
+                    "message": f"Next act chapter script file not found on backend: '{target_name}'",
+                    "details": f"Target folder tracking location: {next_file}"
+                }
+            )
+            
+        return "change_act"
 
 
 class JumpTag(BaseTag):

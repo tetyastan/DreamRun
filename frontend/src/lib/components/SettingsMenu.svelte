@@ -24,7 +24,7 @@
                         type="range" 
                         min="1" 
                         max="11" 
-                        step="1"
+                        step="0.5"
                         bind:value={game.textSpeed}
                     />
                     <span class="speed-value">

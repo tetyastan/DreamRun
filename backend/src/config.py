@@ -9,7 +9,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 # Root folders used by the engine at runtime.
 SCENARIOS_DIR = os.path.join(BASE_DIR, "acts")     # .dreamrun scenario scripts
 CONFIG_DIR = os.path.join(BASE_DIR, "config")      # .py config modules
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")      # backgrounds, images, audio
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")      # images, audio
 
 # Entry scenario file that is executed when the player presses "Start".
 INDEX_ACT = "index.dreamrun"

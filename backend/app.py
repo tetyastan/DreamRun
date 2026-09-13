@@ -11,6 +11,7 @@ from src.config import SESSIONS, SCENARIOS_DIR, DEFAULT_VARS_FILE, INDEX_ACT, AS
 from src.models import ChoiceSelection
 from src.parser import parse_dreamrun_blocks
 from src.runtime import load_py_config, execute_runtime
+from src.runtime_types import Ramp
 
 # Minimum seconds between two /api/game/next calls from the same session.
 # Prevents clients from burning through frames faster than a human can read.
@@ -90,7 +91,10 @@ async def start_game():
         "current_act": first_act,
         "cached_steps": data["steps"],
         "step_index": 0,
-        "runtime_env": {"Character": Character},
+        "runtime_env": {
+            "Character": Character,
+            "Ramp": Ramp,
+        },
         "references": data["references"],
         "return_stack": [],
         "last_request_time": 0,

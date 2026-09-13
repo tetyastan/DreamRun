@@ -15,7 +15,7 @@ def _bootstrap() -> None:
     """
     from src.tags.python_tag import PythonTag
     from src.tags.config_tag import ConfigTag
-    from src.tags.visual import BackgroundTag
+    from src.tags.visual import ImageTag
     from src.tags.audio import AudioTag
     from src.tags.flow import PassTag, NextTag, JumpTag, GotoTag, PauseTag
     from src.tags.scope import RefTag, ChoiceTag, AnswerTag
@@ -30,7 +30,7 @@ def _bootstrap() -> None:
     tags_list = [
         PythonTag(),
         ConfigTag(),
-        BackgroundTag(),
+        ImageTag(),
         AudioTag(),
         PassTag(),
         PauseTag(),

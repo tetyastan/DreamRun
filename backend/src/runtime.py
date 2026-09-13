@@ -5,21 +5,11 @@ from src.config import (
 )
 from src.parser import parse_dreamrun_blocks
 from src.tags import ALL_TAGS
-from src.tags.visual import BackgroundTag
-from src.tags.config_tag import ConfigTag
-
+from src.evaluator import evaluate_step_parameters
 
 def load_py_config(file_path: str, environment: dict) -> bool:
     """
     Loads a Python config file into a runtime environment.
-
-    Thin wrapper around ConfigTag.execute for callers that need to
-    load an arbitrary file path (not just a name relative to CONFIG_DIR).
-    The default --vars.py bootstrap uses this. Scenario-level
-    [config "..."] tags go through the normal tag registry instead.
-
-    Returns True if the file existed and was loaded, False if it was
-    missing. Raises HTTPException on syntax errors.
     """
     if not os.path.exists(file_path):
         return False
@@ -27,6 +17,7 @@ def load_py_config(file_path: str, environment: dict) -> bool:
     import importlib.util
     import uuid
     import traceback
+    from src.runtime_types import Ramp
 
     try:
         module_name = f"dynamic_config_{uuid.uuid4().hex}"
@@ -35,6 +26,9 @@ def load_py_config(file_path: str, environment: dict) -> bool:
             raise Exception(f"Unable to create import specification for '{file_path}'.")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+
+        environment["Ramp"] = Ramp
+
         for key, value in module.__dict__.items():
             if not key.startswith("__") and key != "Character":
                 environment[key] = value
@@ -60,8 +54,10 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
     session = SESSIONS[session_id]
     env = session["runtime_env"]
     dialogues = []
-    session["_pending_bg"] = None
-    session["_pending_audio"] = []
+    
+    # Initialize array references if missing from active layout buffers
+    session.setdefault("_pending_images", [])
+    session.setdefault("_pending_audio", [])
 
     ctx = {
         "session": session,
@@ -78,10 +74,14 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
                 session["step_index"] = frame["index"]
                 continue
             break
+        
+        # Fetch the structural static compiled step definition layout
+        raw_step = session["cached_steps"][session["step_index"]]
 
-        step = session["cached_steps"][session["step_index"]]
+        # Dynamically evaluate all curly-brace parameter strings on the fly
+        step = evaluate_step_parameters(raw_step, env)
 
-        # --- Visible frames: enforce prefetch limit BEFORE consuming ---
+        # --- Visible frames boundary check: enforce prefetch limits strictly ---
         if step["type"] in ("dialogue", "choice", "pause"):
             if len(dialogues) >= max_dialogues:
                 break
@@ -94,13 +94,12 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
             ]
             dialogues.append({
                 "type": "choice",
-                "bg": BackgroundTag.validate(session.get("_pending_bg")),
-                "audio": session.get("_pending_audio", []),
+                "images": list(session.get("_pending_images", [])),
+                "audio": list(session.get("_pending_audio", [])),
                 "options": options,
             })
             session["_pending_audio"] = []
-            session["_pending_bg"] = None
-            # Do not advance the pointer: /api/game/choice will read it.
+            session["_pending_images"] = []
             break
 
         # --- Dialogue consumes the pointer and emits a frame ---
@@ -109,10 +108,10 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
             result = _dispatch(step, ctx)
             if isinstance(result, tuple) and result[0] == "frame":
                 frame = result[1]
-                frame["bg"] = BackgroundTag.validate(session.get("_pending_bg"))
-                frame["audio"] = session.get("_pending_audio", [])
+                frame["images"] = list(session.get("_pending_images", []))
+                frame["audio"] = list(session.get("_pending_audio", []))
                 session["_pending_audio"] = []
-                session["_pending_bg"] = None
+                session["_pending_images"] = []
                 dialogues.append(frame)
             continue
 
@@ -120,21 +119,17 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
         if step["type"] == "pause":
             session["step_index"] += 1
             result = _dispatch(step, ctx)
-            
-            # Trust the tuple configuration payload shape explicitly checking index [0]
             if isinstance(result, tuple) and result[0] == "frame":
                 frame = result[1]
-                frame["bg"] = BackgroundTag.validate(session.get("_pending_bg"))
-                frame["audio"] = session.get("_pending_audio", [])
-                # Safely transfer the input interaction block flag parameter
+                frame["images"] = list(session.get("_pending_images", []))
+                frame["audio"] = list(session.get("_pending_audio", []))
                 frame["block"] = step.get("block", False)
-                
                 session["_pending_audio"] = []
-                session["_pending_bg"] = None
+                session["_pending_images"] = []
                 dialogues.append(frame)
             continue
 
-        # --- Invisible steps: advance pointer, then dispatch ---
+        # --- Step execution for sequential layout configuration commands ---
         session["step_index"] += 1
         result = _dispatch(step, ctx)
 
@@ -157,7 +152,7 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
             session["return_stack"] = []
             break
 
-        if result == "jump":
+        if result in ("jump", "goto"):
             target = step["target"]
             if target not in session["references"]:
                 raise HTTPException(
@@ -167,24 +162,11 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
                         "message": f"Reference tracking key '{target}' missing.",
                     },
                 )
-            session["return_stack"].append({
-                "steps": session["cached_steps"],
-                "index": session["step_index"],
-            })
-            session["cached_steps"] = list(session["references"][target])
-            session["step_index"] = 0
-            continue
-
-        if result == "goto":
-            target = step["target"]
-            if target not in session["references"]:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "status": "REFERENCE_NOT_FOUND",
-                        "message": f"Reference tracking key '{target}' missing.",
-                    },
-                )
+            if result == "jump":
+                session["return_stack"].append({
+                    "steps": session["cached_steps"],
+                    "index": session["step_index"],
+                })
             session["cached_steps"] = list(session["references"][target])
             session["step_index"] = 0
             continue
@@ -193,6 +175,17 @@ def execute_runtime(session_id: str, max_dialogues: int = PREFETCH_COUNT) -> dic
             for nested in reversed(result[1]):
                 session["cached_steps"].insert(session["step_index"], nested)
             continue
+    
+    if (session["_pending_images"] or session["_pending_audio"]) and not dialogues:
+        dialogues.append({
+            "type": "dialogue",
+            "name": None,
+            "text": "",
+            "images": list(session["_pending_images"]),
+            "audio": list(session["_pending_audio"])
+        })
+        session["_pending_audio"] = []
+        session["_pending_images"] = []
 
     return {
         "steps": dialogues,

@@ -9,6 +9,8 @@
     let currentIndex = 0;
     let intervalId = null;
     let isAnimating = $state(false);
+    // Sort overlay nodes strictly matching backend execution layer configuration integers
+    let sortedImages = $derived([...game.activeImages].sort((a, b) => a.layer - b.layer));
 
     function clearAnimation() {
         if (intervalId) {
@@ -42,6 +44,11 @@
                 clearAnimation();
             }
         }, delay);
+    }
+
+    function finalizeHideSequence(id) {
+        // Physical absolute purge from DOM tree array memory slots
+        game.activeImages = game.activeImages.filter(img => img.id !== id);
     }
 
     function finishReveal() {
@@ -83,15 +90,33 @@
         style={game.currentBg && !game.currentBg.startsWith('MISSING:') ? `background-image: url('${game.currentBg}')` : ''}
         onclick={handleScreenClick}
     >
-        {#if game.currentBg && game.currentBg.startsWith('MISSING:')}
-            <div class="missing-bg-placeholder" onclick={(e) => e.stopPropagation()}>
-                <p class="error-title">Missing Background Asset</p>
-                <p class="file-name">{game.currentBg.replace('MISSING:', '')}</p>
-                <p class="tip-text">
-                    Please place file under your /assets/ folder on backend server.
-                </p>
-            </div>
-        {/if}
+        <div class="scenery-canvas-viewport">
+            {#each sortedImages as img (img.id)}
+                <!-- Injected styles context block -->
+                {#if img.containerBlob}
+                    <link rel="stylesheet" href={img.containerBlob}>
+                {/if}
+                {#if img.imageBlob}
+                    <link rel="stylesheet" href={img.imageBlob}>
+                {/if}
+
+                <!-- Container node capturing position layout mechanics -->
+                <div 
+                    class="dreamrun-dynamic-container"
+                    data-node-id={img.id}
+                    class:dr-hide-active={img.isHiding}
+                    onanimationend={() => { if (img.isHiding) finalizeHideSequence(img.id); }}
+                    ontransitionend={() => { if (img.isHiding) finalizeHideSequence(img.id); }}
+                >
+                    <!-- Core graphic texture file leaf -->
+                    <img 
+                        src={img.imgUrl} 
+                        alt={img.id}
+                        class="dreamrun-dynamic-image" 
+                    />
+                </div>
+            {/each}
+        </div>
 
         <div class="interface-container" onclick={(e) => e.stopPropagation()}>
             {#if game.currentSpeaker}
