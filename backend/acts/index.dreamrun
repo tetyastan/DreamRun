@@ -1,1 +1,25 @@
-grerg: wfwef
+[python]
+    # 1. Setup file assets parameters references
+    lab_bg = "/bg/cyberpunk_lab.png"
+    theme_music = "/audio/ambient_loop.wav"
+    
+    # 2. Wire native numeric curves objects
+    fade_in_track = Ramp(0.1, 3000, 0)
+    quiet_volume = Ramp(0, 1500)
+    
+    # 3. Dynamic attributes definition values
+    actor_layer = 12
+[/python]
+
+# Play music utilizing our target Ramp instance object seamlessly
+[audio music {theme_music} ambient_track {fade_in_track} 1.0/]
+
+# Render backdrop layer and layout positions cleanly via curly braces
+[image show {lab_bg} background_canvas 0 "" ""/]
+
+:tester: > "Testing dialogue."
+
+# Modify mixing coefficients values securely down the pipeline
+[audio modify ambient_track {quiet_volume} 1.0/]
+
+[pause 5000 block/]
