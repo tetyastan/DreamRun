@@ -15,7 +15,7 @@
 [audio music {theme_music} ambient_track {fade_in_track} 1.0/]
 
 # Render backdrop layer and layout positions cleanly via curly braces
-[image show {lab_bg} background_canvas 0 "" ""/]
+[image show {lab_bg} background_canvas 0 "/styles/viewport_full.css" ""/]
 
 :tester: > "Testing dialogue."
 

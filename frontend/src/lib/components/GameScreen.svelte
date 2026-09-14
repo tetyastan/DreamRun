@@ -72,8 +72,11 @@
         }
     }
 
-    // Reactive reaction layer tracking plain text changes directly
     $effect(() => {
+        // Establish a reactive dependency on the dialogue object itself.
+        // Even when the text is identical, a new dialogue object forces
+        // the effect to re-run and restart the typewriter.
+        game.currentDialogue;
         startRevealAnimation(game.currentText);
     });
 
@@ -92,7 +95,6 @@
     >
         <div class="scenery-canvas-viewport">
             {#each sortedImages as img (img.id)}
-                <!-- Injected styles context block -->
                 {#if img.containerBlob}
                     <link rel="stylesheet" href={img.containerBlob}>
                 {/if}
@@ -100,19 +102,18 @@
                     <link rel="stylesheet" href={img.imageBlob}>
                 {/if}
 
-                <!-- Container node capturing position layout mechanics -->
+                <!-- The container and internal graphic leaf now wear classes driven by their filenames -->
                 <div 
-                    class="dreamrun-dynamic-container"
+                    class={img.containerClass}
                     data-node-id={img.id}
                     class:dr-hide-active={img.isHiding}
                     onanimationend={() => { if (img.isHiding) finalizeHideSequence(img.id); }}
                     ontransitionend={() => { if (img.isHiding) finalizeHideSequence(img.id); }}
                 >
-                    <!-- Core graphic texture file leaf -->
                     <img 
                         src={img.imgUrl} 
                         alt={img.id}
-                        class="dreamrun-dynamic-image" 
+                        class={img.imageClass}
                     />
                 </div>
             {/each}

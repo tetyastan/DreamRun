@@ -1,19 +1,22 @@
 import { env } from '$env/dynamic/public';
-import { AudioManager } from './AudioManager.svelte'
+import { AudioManager } from './AudioManager.svelte';
 
 /**
- * Main game runtime state manager.
+ * Main game runtime state manager built on Svelte 5 Runes.
+ * Coordinates atomic image preloading, stylesheet decryption caching,
+ * and gapless Web Audio context pipelines.
  */
 export class GameState {
     publicApiUrl = env.PUBLIC_API_URL;
-    audioManager = new AudioManager(); // AudioManager is now defined above successfully
+    audioManager = new AudioManager();
 
     currentScreen = $state('MENU');
     sessionId = $state('');
     hasNext = $state(false);
 
+    // Reactive array managing state-driven displayable overlay nodes
     activeImages = $state([]);
-    cssBlobCache = new Map();
+    cssBlobCache = new Map(); // url -> local Blob URL memory reference
 
     currentSpeaker = $state(null);
     currentText = $state('');
@@ -36,6 +39,7 @@ export class GameState {
     isGameStarted = $state(false);
     dialogueQueue = $state([]);
     requestGeneration = 0;
+    currentDialogue = $state(null);
 
     constructor() {
         if (typeof window !== 'undefined') {
@@ -202,6 +206,12 @@ export class GameState {
     async processImageCommands(commands) {
         if (!Array.isArray(commands)) return;
 
+        const getClassNameFromUrl = (url) => {
+            if (!url || url === 'none') return '';
+            const filename = url.substring(url.lastIndexOf('/') + 1);
+            return filename.substring(0, filename.lastIndexOf('.')) || filename;
+        };
+
         for (const cmd of commands) {
             const { modifier, id } = cmd;
 
@@ -209,16 +219,21 @@ export class GameState {
                 const imgUrl = cmd.img_path?.startsWith('/assets')
                     ? `${this.publicApiUrl}${cmd.img_path}`
                     : cmd.img_path;
+
                 const containerStyleUrl = cmd.container_css
                     ? (cmd.container_css.startsWith('/assets')
                         ? `${this.publicApiUrl}${cmd.container_css}`
                         : cmd.container_css)
                     : null;
+
                 const imageStyleUrl = cmd.image_css
                     ? (cmd.image_css.startsWith('/assets')
                         ? `${this.publicApiUrl}${cmd.image_css}`
                         : cmd.image_css)
                     : null;
+
+                const containerClass = getClassNameFromUrl(cmd.container_css);
+                const imageClass = getClassNameFromUrl(cmd.image_css);
 
                 const [blobContainerStyle, blobImageStyle] = await Promise.all([
                     this.decryptAndLoadStyle(containerStyleUrl),
@@ -232,38 +247,59 @@ export class GameState {
                     layer: cmd.layer ?? 10,
                     containerBlob: blobContainerStyle,
                     imageBlob: blobImageStyle,
+                    containerClass,
+                    imageClass,
                     isHiding: false
                 });
             }
             else if (modifier === 'modify') {
-                const target = this.activeImages.find(img => img.id === id);
-                if (target) {
-                    if (cmd.img_path) {
-                        target.imgUrl = cmd.img_path.startsWith('/assets')
-                            ? `${this.publicApiUrl}${cmd.img_path}`
-                            : cmd.img_path;
-                    }
-                    if (cmd.layer !== undefined) target.layer = cmd.layer;
+                const exists = this.activeImages.some(img => img.id !== id);
+                if (!exists) continue;
 
-                    if (cmd.container_css) {
-                        const url = cmd.container_css.startsWith('/assets')
-                            ? `${this.publicApiUrl}${cmd.container_css}`
-                            : cmd.container_css;
-                        target.containerBlob = await this.decryptAndLoadStyle(url);
-                    }
-                    if (cmd.image_css) {
-                        const url = cmd.image_css.startsWith('/assets')
-                            ? `${this.publicApiUrl}${cmd.image_css}`
-                            : cmd.image_css;
-                        target.imageBlob = await this.decryptAndLoadStyle(url);
-                    }
+                let nextImgUrl = undefined;
+                let nextContainerBlob = undefined;
+                let nextImageBlob = undefined;
+                let nextContainerClass = undefined;
+                let nextImageClass = undefined;
+
+                if (cmd.img_path) {
+                    nextImgUrl = cmd.img_path.startsWith('/assets')
+                        ? `${this.publicApiUrl}${cmd.img_path}`
+                        : cmd.img_path;
                 }
+                if (cmd.container_css) {
+                    const url = cmd.container_css.startsWith('/assets')
+                        ? `${this.publicApiUrl}${cmd.container_css}`
+                        : cmd.container_css;
+                    nextContainerBlob = await this.decryptAndLoadStyle(url);
+                    nextContainerClass = getClassNameFromUrl(cmd.container_css);
+                }
+                if (cmd.image_css) {
+                    const url = cmd.image_css.startsWith('/assets')
+                        ? `${this.publicApiUrl}${cmd.image_css}`
+                        : cmd.image_css;
+                    nextImageBlob = await this.decryptAndLoadStyle(url);
+                    nextImageClass = getClassNameFromUrl(cmd.image_css);
+                }
+
+                this.activeImages = this.activeImages.map(img => {
+                    if (img.id !== id) return img;
+                    return {
+                        ...img,
+                        imgUrl: nextImgUrl !== undefined ? nextImgUrl : img.imgUrl,
+                        layer: cmd.layer !== undefined ? cmd.layer : img.layer,
+                        containerBlob: nextContainerBlob !== undefined ? nextContainerBlob : img.containerBlob,
+                        imageBlob: nextImageBlob !== undefined ? nextImageBlob : img.imageBlob,
+                        containerClass: nextContainerClass !== undefined ? nextContainerClass : img.containerClass,
+                        imageClass: nextImageClass !== undefined ? nextImageClass : img.imageClass
+                    };
+                });
             }
             else if (modifier === 'hide') {
-                const target = this.activeImages.find(img => img.id === id);
-                if (target) {
-                    target.isHiding = true;
-                }
+                this.activeImages = this.activeImages.map(img => {
+                    if (img.id !== id) return img;
+                    return { ...img, isHiding: true };
+                });
             }
         }
     }
@@ -354,18 +390,29 @@ export class GameState {
 
                 if (Array.isArray(step.images)) {
                     for (const cmd of step.images) {
-                        if (cmd.container_css) {
+                        if (cmd.img_path && !cmd.img_path.startsWith('MISSING:')) {
+                            const imgUrl = cmd.img_path.startsWith('/assets')
+                                ? `${this.publicApiUrl}${cmd.img_path}`
+                                : cmd.img_path;
+                            // Pre-warm the browser canvas texture memory allocation cache pool
+                            styleTargets.push(fetch(imgUrl).catch(() => {}));
+                        }
+                        if (cmd.container_css && cmd.container_css !== 'none') {
                             styleTargets.push(
-                                cmd.container_css.startsWith('/assets')
-                                    ? `${this.publicApiUrl}${cmd.container_css}`
-                                    : cmd.container_css
+                                this.decryptAndLoadStyle(
+                                    cmd.container_css.startsWith('/assets')
+                                        ? `${this.publicApiUrl}${cmd.container_css}`
+                                        : cmd.container_css
+                                )
                             );
                         }
-                        if (cmd.image_css) {
+                        if (cmd.image_css && cmd.image_css !== 'none') {
                             styleTargets.push(
-                                cmd.image_css.startsWith('/assets')
-                                    ? `${this.publicApiUrl}${cmd.image_css}`
-                                    : cmd.image_css
+                                this.decryptAndLoadStyle(
+                                    cmd.image_css.startsWith('/assets')
+                                        ? `${this.publicApiUrl}${cmd.image_css}`
+                                        : cmd.image_css
+                                )
                             );
                         }
                     }
@@ -374,7 +421,7 @@ export class GameState {
 
             await Promise.all([
                 this.audioManager.preloadAudioBuffers(audioTargets),
-                ...styleTargets.map(url => this.decryptAndLoadStyle(url))
+                ...styleTargets
             ]);
         } catch (err) {
             console.warn('[DreamRun][preload] Asset pipeline hydration fallback:', err);
@@ -387,7 +434,7 @@ export class GameState {
         }
 
         const filteredNodes = steps.filter(step =>
-            step && (step.type === 'dialogue' || step.type === 'choice' || step.type === 'pause')
+            step && (step.type === 'dialogue' || step.type === 'choice' || step.type === 'pause' || step.type === 'image')
         );
 
         if (filteredNodes.length === 0) {
@@ -539,9 +586,14 @@ export class GameState {
             const data = await response.json();
             this.sessionId = data.session_id;
             this.playerVariables = data.variables || {};
-            this.currentScreen = 'GAME';
 
+            // Perform 100% of asset hydration preloading PRIOR to changing screens
             await this.processBlock(data.steps);
+
+            // Change screen to active context only after assets are firmly bound into local memory
+            if (generation === this.requestGeneration) {
+                this.currentScreen = 'GAME';
+            }
         } catch (err) {
             if (generation !== this.requestGeneration) return;
             this.showError('FETCH_ERROR', 'Backend connection error.', err?.message || String(err));
