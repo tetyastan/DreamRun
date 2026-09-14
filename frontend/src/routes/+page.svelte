@@ -1,7 +1,7 @@
 <script>
   import '../app.css';
   import { onMount } from 'svelte';
-  import { initGameContext } from '$lib/gameContext.svelte';
+  import { initGameContext } from '$lib/__index__.svelte';
 
   import ErrorMsg from '$lib/components/ErrorMsg.svelte';
   import GameScreen from '$lib/components/GameScreen.svelte';

@@ -1,6 +1,6 @@
 <script>
     import './GameScreen.css'
-    import { useGameContext } from '$lib/gameContext.svelte';
+    import { useGameContext } from '$lib/__index__.svelte';
     import { onDestroy } from 'svelte';
 
     const game = useGameContext();

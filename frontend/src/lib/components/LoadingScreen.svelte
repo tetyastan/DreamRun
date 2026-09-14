@@ -1,6 +1,6 @@
 <script>
     import './LoadingScreen.css';
-    import { useGameContext } from '$lib/gameContext.svelte';
+    import { useGameContext } from '$lib/__index__.svelte';
     const gameState = useGameContext();
 </script>
 

@@ -1,15 +1,10 @@
 {
-  "name": "dreamrun-monorepo",
-  "version": "1.0.5",
-  "type": "module",
-  "workspaces": [
-    "frontend"
-  ],
-  "scripts": {
-    "postinstall": "node package_setup.js",
-    "dev": "node package_setup.js"
-  },
-  "dependencies": {
-    "concurrently": "^8.2.2"
-  }
+    "name": "dreamrun-monorepo",
+    "version": "1.0.5",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "setup": "node package_setup.js --setup-only",
+        "dev": "node package_setup.js"
+    }
 }

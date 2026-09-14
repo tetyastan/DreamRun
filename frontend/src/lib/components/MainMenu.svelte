@@ -1,6 +1,6 @@
 <script>
     import './MainMenu.css'
-    import { useGameContext } from '$lib/gameContext.svelte';
+    import { useGameContext } from '$lib/__index__.svelte';
     const game = useGameContext();
 </script>
 
