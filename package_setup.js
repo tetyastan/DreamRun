@@ -1,7 +1,7 @@
 import fs from 'fs';
 import readline from 'readline';
 import path from 'path';
-import { spawn, execSync } from 'child_process';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -70,8 +70,6 @@ async function main() {
     const FRONTEND_DIR = 'frontend';
     const VENV_NAME = '.venv';
 
-    const setupOnly = process.argv.includes('--setup-only');
-
     const frontendEnvPath = path.join(FRONTEND_DIR, '.env');
     const venvDir = path.join(BACKEND_DIR, VENV_NAME);
 
@@ -87,11 +85,11 @@ async function main() {
     let backendPort = DEFAULT_BACKEND_PORT;
     let frontendPort = DEFAULT_FRONTEND_PORT;
     let publicApiUrl = `http://127.0.0.1:${backendPort}`;
-    let needSetup = false;
+    let needEnvSetup = false;
 
-    console.log('[Msg] DreamRun Engine: workspace initialization');
+    console.log('[Msg] DreamRun Engine: workspace setup');
 
-    // Version sync
+    // ---- Version sync ----
     const rootPackagePath = 'package.json';
     const frontendPackagePath = path.join(FRONTEND_DIR, 'package.json');
 
@@ -115,7 +113,7 @@ async function main() {
         }
     }
 
-    // 1. Python venv
+    // ---- 1. Python venv ----
     if (!fs.existsSync(venvDir)) {
         console.log(`[Msg] Python venv (${VENV_NAME}) missing. Creating...`);
         const created = runCommand(`${pythonCmd} -m venv ${VENV_NAME}`, BACKEND_DIR);
@@ -125,6 +123,7 @@ async function main() {
         }
     }
 
+    // ---- 2. Python dependencies ----
     const requirementsPath = path.join(BACKEND_DIR, 'requirements.txt');
     if (fs.existsSync(requirementsPath)) {
         console.log('[Msg] Installing backend Python dependencies...');
@@ -132,17 +131,18 @@ async function main() {
         runCommand(`${pythonVenvProxy} -m pip install -r requirements.txt --quiet`, BACKEND_DIR);
         console.log('[Ok] Python dependencies installed.\n');
     } else {
-        console.warn('[Warn] backend/requirements.txt not found, skipping pip install.');
+        console.error('[Error] backend/requirements.txt not found.');
+        process.exit(1);
     }
 
-    // 2. Frontend Node dependencies
+    // ---- 3. Frontend Node dependencies ----
     if (!ensureFrontendDependencies(FRONTEND_DIR)) {
         process.exit(1);
     }
 
-    // 3. Frontend .env
+    // ---- 4. Frontend .env ----
     if (!fs.existsSync(frontendEnvPath)) {
-        needSetup = true;
+        needEnvSetup = true;
     } else {
         try {
             const envContent = fs.readFileSync(frontendEnvPath, 'utf-8');
@@ -151,13 +151,15 @@ async function main() {
                 publicApiUrl = match[1].trim();
                 const portMatch = publicApiUrl.match(/:(\d+)/);
                 if (portMatch) backendPort = portMatch[1];
+            } else {
+                needEnvSetup = true;
             }
         } catch {
-            needSetup = true;
+            needEnvSetup = true;
         }
     }
 
-    if (needSetup) {
+    if (needEnvSetup) {
         console.log('[Msg] Missing environment fields. Starting interactive setup...');
 
         backendPort = await question(
@@ -186,88 +188,11 @@ async function main() {
         }
     }
 
-    // 4. Setup-only early exit
-    if (setupOnly) {
-        console.log('[Msg] Setup complete. Run "npm run dev" to launch servers.');
-        rl.close();
-        process.exit(0);
-    }
-
     rl.close();
 
-    // 5. Locate concurrently
-    const concurrentlyBin = path.join(
-        FRONTEND_DIR,
-        'node_modules',
-        'concurrently',
-        'dist',
-        'bin',
-        'concurrently.js'
-    );
-
-    if (!fs.existsSync(concurrentlyBin)) {
-        console.error(`[Error] concurrently not found at: ${concurrentlyBin}`);
-        process.exit(1);
-    }
-
-    // 6. Launch both servers
-    const pythonExeName = isWindows ? 'python.exe' : 'python';
-    console.log("[Msg] Servers starting...");
-    const backendCommand = isWindows
-        ? `cd ${BACKEND_DIR} && .\\${VENV_NAME}\\Scripts\\${pythonExeName} -m uvicorn app:app --host 127.0.0.1 --port ${backendPort} --reload`
-        : `cd ${BACKEND_DIR} && ./${VENV_NAME}/bin/${pythonExeName} -m uvicorn app:app --host 127.0.0.1 --port ${backendPort} --reload`;
-
-    const frontendCommand = `cd ${FRONTEND_DIR} && npm run dev -- --port ${frontendPort}`;
-
-    const spawnArgs = [
-        concurrentlyBin,
-        '--kill-others',
-        '-n', 'Backend,Frontend',
-        '-c', 'cyan,magenta',
-        backendCommand,
-        frontendCommand
-    ];
-
-    const child = spawn(process.execPath, spawnArgs, {
-        stdio: 'inherit',
-        cwd: __dirname
-    });
-
-    // 7. Terminal cleanup
-    const restoreTerminal = () => {
-        process.stdout.write('\x1B[?25h');
-        if (process.stdin.setRawMode) {
-            process.stdin.setRawMode(false);
-        }
-    };
-
-    const shutdown = (signal) => {
-        restoreTerminal();
-        if (child && !child.killed) {
-            try {
-                child.kill(signal || 'SIGTERM');
-            } catch {}
-        }
-    };
-
-    process.on('SIGINT', () => {
-        shutdown('SIGINT');
-        process.exit(0);
-    });
-
-    process.on('SIGTERM', () => {
-        shutdown('SIGTERM');
-        process.exit(0);
-    });
-
-    process.on('exit', () => {
-        restoreTerminal();
-    });
-
-    child.on('exit', (code) => {
-        restoreTerminal();
-        process.exit(code ?? 0);
-    });
+    console.log('[Ok] Setup complete.');
+    console.log('[Msg] Run "npm run dev" to launch the servers.');
+    process.exit(0);
 }
 
 main().catch((err) => {

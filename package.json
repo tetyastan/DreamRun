@@ -4,7 +4,7 @@
     "type": "module",
     "private": true,
     "scripts": {
-        "setup": "node package_setup.js --setup-only",
-        "dev": "node package_setup.js"
+        "setup": "node package_setup.js",
+        "dev": "node package_dev.js"
     }
 }
