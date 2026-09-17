@@ -76,7 +76,13 @@
         // Establish a reactive dependency on the dialogue object itself.
         // Even when the text is identical, a new dialogue object forces
         // the effect to re-run and restart the typewriter.
-        game.currentDialogue;
+        const dialogue = game.currentDialogue;
+        
+        if (dialogue && dialogue.type === 'choice') {
+            finishReveal(); 
+            return;
+        }
+
         startRevealAnimation(game.currentText);
     });
 

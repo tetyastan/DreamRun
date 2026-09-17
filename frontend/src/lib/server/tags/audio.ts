@@ -4,6 +4,7 @@ import { BaseTag, TagParseResult, type ExecResult } from './base.js';
 import type { Step, ExecContext, ParseContext, AudioCommand } from '../types.js';
 import { ASSETS_DIR } from '../config.js';
 import { parseAnimatedValue } from '../text_utils.js';
+import { AssetMissingError } from '../errors.js';
 
 /**
  * Handles the [audio ...] family:
@@ -87,14 +88,14 @@ function resolveAudioPath(raw: string): string {
     if (raw.startsWith('/assets/')) {
         const abs = path.join(ASSETS_DIR, raw.replace('/assets/', ''));
         if (!fs.existsSync(abs)) {
-            throw new Error(`AUDIO_ASSET_MISSING_ERROR: ${raw}`);
+            throw new AssetMissingError('AUDIO', raw, abs);
         }
         return raw;
     }
     if (raw.startsWith('/')) {
         const abs = path.join(ASSETS_DIR, raw.replace(/^\//, ''));
         if (!fs.existsSync(abs)) {
-            throw new Error(`AUDIO_ASSET_MISSING_ERROR: ${raw}`);
+            throw new AssetMissingError('AUDIO', raw, abs);
         }
         return `/assets${raw}`;
     }

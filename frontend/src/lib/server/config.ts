@@ -12,7 +12,7 @@ export const CONFIG_DIR = path.join(PROJECT_ROOT, 'src', 'config');
 export const ASSETS_DIR = path.join(PROJECT_ROOT, 'static', 'assets');
 
 export const INDEX_ACT = 'index.dreamrun';
-export const DEFAULT_VARS_FILE = path.join(PROJECT_ROOT, 'src', 'scenes', '--vars.ts');
+export const DEFAULT_VARS_FILE = path.join(PROJECT_ROOT, 'src', 'config', '--vars.ts');
 
 export const REMOVE_QUOTATION_MARKS = true;
 export const PREFETCH_COUNT = 5;

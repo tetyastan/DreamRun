@@ -3,6 +3,7 @@ import path from 'node:path';
 import { BaseTag, TagParseResult, type ExecResult } from './base.js';
 import type { Step, ExecContext, ParseContext, ImageCommand } from '../types.js';
 import { ASSETS_DIR } from '../config.js';
+import { AssetMissingError } from '../errors.js';
 
 /**
  * Handles the [image ...] family:
@@ -103,14 +104,14 @@ function resolveImagePath(rawPath: string): string {
     if (rawPath.startsWith('/assets/')) {
         const abs = path.join(ASSETS_DIR, rawPath.replace('/assets/', ''));
         if (!fs.existsSync(abs)) {
-            throw new Error(`IMAGE_ASSET_MISSING_ERROR: ${rawPath}`);
+            throw new AssetMissingError('IMAGE', rawPath, abs);
         }
         return rawPath;
     }
     if (rawPath.startsWith('/')) {
         const abs = path.join(ASSETS_DIR, rawPath.replace(/^\//, ''));
         if (!fs.existsSync(abs)) {
-            throw new Error(`IMAGE_ASSET_MISSING_ERROR: ${rawPath}`);
+            throw new AssetMissingError('IMAGE', rawPath, abs);
         }
         return `/assets${rawPath}`;
     }
@@ -133,7 +134,7 @@ function resolveCssPath(rawPath: string | null): string | null {
 
     const abs = path.join(ASSETS_DIR, relative);
     if (!fs.existsSync(abs)) {
-        throw new Error(`VISUAL_ASSET_MISSING_ERROR: ${rawPath}`);
+        throw new AssetMissingError('VISUAL', rawPath, abs);
     }
 
     return rawPath.startsWith('/assets/') ? rawPath : `/assets${rawPath.startsWith('/') ? '' : '/'}${rawPath}`;

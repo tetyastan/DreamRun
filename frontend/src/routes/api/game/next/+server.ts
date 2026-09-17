@@ -4,7 +4,7 @@ import { executeRuntime } from '$lib/server/runtime.js';
 import { ScriptRuntimeError } from '$lib/server/script_runtime.js';
 import type { RequestHandler } from './$types.js';
 
-const MINIMUM_READ_TIME = 2.5;
+const MINIMUM_READ_TIME = 0.2;
 
 export const POST: RequestHandler = async ({ request }) => {
     const sessionId = request.headers.get('X-Session-ID');

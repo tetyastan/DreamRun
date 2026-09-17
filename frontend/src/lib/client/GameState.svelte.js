@@ -1,5 +1,3 @@
-<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
-import { env } from '$env/dynamic/public';
 import { AudioManager } from './AudioManager.svelte';
 
 /**
@@ -8,12 +6,6 @@ import { AudioManager } from './AudioManager.svelte';
  * and gapless Web Audio context pipelines.
  */
 export class GameState {
-    publicApiUrl = env.PUBLIC_API_URL;
-=======
-import { AudioManager } from './AudioManager.svelte.js';
-
-export class GameState {
->>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
     audioManager = new AudioManager();
 
     currentScreen = $state('MENU');
@@ -169,29 +161,7 @@ export class GameState {
             const { modifier, id } = cmd;
 
             if (modifier === 'show') {
-<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
-                const imgUrl = cmd.img_path?.startsWith('/assets')
-                    ? `${this.publicApiUrl}${cmd.img_path}`
-                    : cmd.img_path;
-
-                const containerStyleUrl = cmd.container_css
-                    ? (cmd.container_css.startsWith('/assets')
-                        ? `${this.publicApiUrl}${cmd.container_css}`
-                        : cmd.container_css)
-                    : null;
-
-                const imageStyleUrl = cmd.image_css
-                    ? (cmd.image_css.startsWith('/assets')
-                        ? `${this.publicApiUrl}${cmd.image_css}`
-                        : cmd.image_css)
-                    : null;
-
-                const containerClass = getClassNameFromUrl(cmd.container_css);
-                const imageClass = getClassNameFromUrl(cmd.image_css);
-
-=======
                 const imgUrl = cmd.img_path || '';
->>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
                 const [blobContainerStyle, blobImageStyle] = await Promise.all([
                     this.decryptAndLoadStyle(cmd.container_css),
                     this.decryptAndLoadStyle(cmd.image_css),
@@ -204,61 +174,6 @@ export class GameState {
                     layer: cmd.layer ?? 10,
                     containerBlob: blobContainerStyle,
                     imageBlob: blobImageStyle,
-<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
-                    containerClass,
-                    imageClass,
-                    isHiding: false
-                });
-            }
-            else if (modifier === 'modify') {
-                const exists = this.activeImages.some(img => img.id !== id);
-                if (!exists) continue;
-
-                let nextImgUrl = undefined;
-                let nextContainerBlob = undefined;
-                let nextImageBlob = undefined;
-                let nextContainerClass = undefined;
-                let nextImageClass = undefined;
-
-                if (cmd.img_path) {
-                    nextImgUrl = cmd.img_path.startsWith('/assets')
-                        ? `${this.publicApiUrl}${cmd.img_path}`
-                        : cmd.img_path;
-                }
-                if (cmd.container_css) {
-                    const url = cmd.container_css.startsWith('/assets')
-                        ? `${this.publicApiUrl}${cmd.container_css}`
-                        : cmd.container_css;
-                    nextContainerBlob = await this.decryptAndLoadStyle(url);
-                    nextContainerClass = getClassNameFromUrl(cmd.container_css);
-                }
-                if (cmd.image_css) {
-                    const url = cmd.image_css.startsWith('/assets')
-                        ? `${this.publicApiUrl}${cmd.image_css}`
-                        : cmd.image_css;
-                    nextImageBlob = await this.decryptAndLoadStyle(url);
-                    nextImageClass = getClassNameFromUrl(cmd.image_css);
-                }
-
-                this.activeImages = this.activeImages.map(img => {
-                    if (img.id !== id) return img;
-                    return {
-                        ...img,
-                        imgUrl: nextImgUrl !== undefined ? nextImgUrl : img.imgUrl,
-                        layer: cmd.layer !== undefined ? cmd.layer : img.layer,
-                        containerBlob: nextContainerBlob !== undefined ? nextContainerBlob : img.containerBlob,
-                        imageBlob: nextImageBlob !== undefined ? nextImageBlob : img.imageBlob,
-                        containerClass: nextContainerClass !== undefined ? nextContainerClass : img.containerClass,
-                        imageClass: nextImageClass !== undefined ? nextImageClass : img.imageClass
-                    };
-                });
-            }
-            else if (modifier === 'hide') {
-                this.activeImages = this.activeImages.map(img => {
-                    if (img.id !== id) return img;
-                    return { ...img, isHiding: true };
-                });
-=======
                     isHiding: false,
                 });
             } else if (modifier === 'modify') {
@@ -276,7 +191,6 @@ export class GameState {
             } else if (modifier === 'hide') {
                 const target = this.activeImages.find(img => img.id === id);
                 if (target) target.isHiding = true;
->>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
             }
         }
     }
@@ -363,31 +277,6 @@ export class GameState {
                 if (Array.isArray(step.images)) {
                     for (const cmd of step.images) {
                         if (cmd.img_path && !cmd.img_path.startsWith('MISSING:')) {
-<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
-                            const imgUrl = cmd.img_path.startsWith('/assets')
-                                ? `${this.publicApiUrl}${cmd.img_path}`
-                                : cmd.img_path;
-                            // Pre-warm the browser canvas texture memory allocation cache pool
-                            styleTargets.push(fetch(imgUrl).catch(() => {}));
-                        }
-                        if (cmd.container_css && cmd.container_css !== 'none') {
-                            styleTargets.push(
-                                this.decryptAndLoadStyle(
-                                    cmd.container_css.startsWith('/assets')
-                                        ? `${this.publicApiUrl}${cmd.container_css}`
-                                        : cmd.container_css
-                                )
-                            );
-                        }
-                        if (cmd.image_css && cmd.image_css !== 'none') {
-                            styleTargets.push(
-                                this.decryptAndLoadStyle(
-                                    cmd.image_css.startsWith('/assets')
-                                        ? `${this.publicApiUrl}${cmd.image_css}`
-                                        : cmd.image_css
-                                )
-                            );
-=======
                             styleTargets.push(fetch(cmd.img_path).catch(() => {}));
                         }
                         if (cmd.container_css && cmd.container_css !== 'none') {
@@ -395,7 +284,6 @@ export class GameState {
                         }
                         if (cmd.image_css && cmd.image_css !== 'none') {
                             styleTargets.push(this.decryptAndLoadStyle(cmd.image_css));
->>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
                         }
                     }
                 }
@@ -403,11 +291,7 @@ export class GameState {
 
             await Promise.all([
                 this.audioManager.preloadAudioBuffers(audioTargets),
-<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
-                ...styleTargets
-=======
                 ...styleTargets,
->>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
             ]);
         } catch (err) {
             console.warn('[DreamRun][preload] Asset hydration fallback:', err);
