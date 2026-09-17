@@ -2,3 +2,4 @@
 /.vs
 *.vsix
 /node_modules
+*.pyc
