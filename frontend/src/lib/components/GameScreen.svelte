@@ -90,7 +90,6 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
         class="game-screen"
-        style={game.currentBg && !game.currentBg.startsWith('MISSING:') ? `background-image: url('${game.currentBg}')` : ''}
         onclick={handleScreenClick}
     >
         <div class="scenery-canvas-viewport">

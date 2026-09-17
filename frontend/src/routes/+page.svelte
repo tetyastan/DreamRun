@@ -14,18 +14,8 @@
 
   // Intercept unhandled global frontend exceptions and check environment variables
   onMount(() => {
-    // .env existence verification check
-    if (!game.publicApiUrl) {
-      game.showError(
-        'ENV_MISSING_ERROR',
-        'The .env file or the PUBLIC_API_URL variable is missing.',
-        'Please ensure that the .env file is created in the frontend root folder and contains the variable: PUBLIC_API_URL=http://BACKEND-URL[:PORT]'
-      );
-    }
-
     const handleRuntimeError = (event) => {
-      event.preventDefault(); 
-      
+      event.preventDefault();
       const error = event.error || event.reason;
       game.showError(
         'FRONTEND_RUNTIME_ERROR',
@@ -34,9 +24,7 @@
       );
     };
 
-    // Catch standard JS runtime errors
     window.addEventListener('error', handleRuntimeError);
-    // Catch unhandled promise rejections
     window.addEventListener('unhandledrejection', handleRuntimeError);
 
     return () => {

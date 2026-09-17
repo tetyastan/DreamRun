@@ -16,5 +16,11 @@ export default defineConfig({
 			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
 			adapter: adapter()
 		})
-	]
+	],
+	ssr: {
+        external: ['pyodide'],
+    },
+    optimizeDeps: {
+        exclude: ['pyodide'],
+    },
 });

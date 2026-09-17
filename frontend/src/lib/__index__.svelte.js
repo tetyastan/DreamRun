@@ -1,5 +1,5 @@
 import { getContext, setContext } from 'svelte';
-import { GameState } from './GameState.svelte'
+import { GameState } from './client/GameState.svelte'
 
 const GAME_CONTEXT_KEY = Symbol('GAME_CONTEXT');
 

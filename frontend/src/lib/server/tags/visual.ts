@@ -1,0 +1,140 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { BaseTag, TagParseResult, type ExecResult } from './base.js';
+import type { Step, ExecContext, ParseContext, ImageCommand } from '../types.js';
+import { ASSETS_DIR } from '../config.js';
+
+/**
+ * Handles the [image ...] family:
+ *
+ *     [image show "path" id layer "container.css" "image.css"/]
+ *     [image modify "path" id layer "container.css" "image.css"/]
+ *     [image hide id/]
+ *
+ * Commands are staged on session._pending_images and attached to the
+ * next visible frame.
+ */
+export class ImageTag extends BaseTag {
+    name = 'image';
+
+    private readonly SHOW =
+        /^\[image\s+show\s+"([^"]+)"\s+([A-Za-z0-9_]+)\s+(-?\d+)\s+"([^"]*)"\s+"([^"]*)"\s*\/?\]$/;
+
+    private readonly MODIFY =
+        /^\[image\s+modify\s+"([^"]*)"\s+([A-Za-z0-9_]+)\s+(-?\d+)\s+"([^"]*)"\s+"([^"]*)"\s*\/?\]$/;
+
+    private readonly HIDE =
+        /^\[image\s+hide\s+([A-Za-z0-9_]+)\s*\/?\]$/;
+
+    parse(line: string, _lineIdx: number, _ctx: ParseContext): TagParseResult {
+        const show = this.SHOW.exec(line);
+        if (show) {
+            return new TagParseResult({
+                step: {
+                    type: 'image',
+                    modifier: 'show',
+                    img_path: show[1],
+                    id: show[2],
+                    layer: parseInt(show[3], 10),
+                    container_css: show[4] || null,
+                    image_css: show[5] || null,
+                },
+                consumed: true,
+            });
+        }
+
+        const modify = this.MODIFY.exec(line);
+        if (modify) {
+            return new TagParseResult({
+                step: {
+                    type: 'image',
+                    modifier: 'modify',
+                    img_path: modify[1] || null,
+                    id: modify[2],
+                    layer: parseInt(modify[3], 10),
+                    container_css: modify[4] || null,
+                    image_css: modify[5] || null,
+                },
+                consumed: true,
+            });
+        }
+
+        const hide = this.HIDE.exec(line);
+        if (hide) {
+            return new TagParseResult({
+                step: { type: 'image', modifier: 'hide', id: hide[1] },
+                consumed: true,
+            });
+        }
+
+        return new TagParseResult({ consumed: false });
+    }
+
+    execute(step: Step, ctx: ExecContext): ExecResult {
+        if (step.type !== 'image') return null;
+
+        const session = ctx.session;
+        const command: ImageCommand = {
+            modifier: step.modifier as ImageCommand['modifier'],
+            id: step.id as string,
+        };
+
+        if (step.modifier === 'show' || step.modifier === 'modify') {
+            const rawPath = step.img_path as string | null;
+            if (rawPath) {
+                command.img_path = resolveImagePath(rawPath);
+            }
+
+            command.layer = typeof step.layer === 'number' ? step.layer : 10;
+
+            command.container_css = resolveCssPath(step.container_css as string | null);
+            command.image_css = resolveCssPath(step.image_css as string | null);
+        }
+
+        session._pending_images.push(command);
+        return null;
+    }
+}
+
+function resolveImagePath(rawPath: string): string {
+    if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) {
+        return rawPath;
+    }
+    if (rawPath.startsWith('/assets/')) {
+        const abs = path.join(ASSETS_DIR, rawPath.replace('/assets/', ''));
+        if (!fs.existsSync(abs)) {
+            throw new Error(`IMAGE_ASSET_MISSING_ERROR: ${rawPath}`);
+        }
+        return rawPath;
+    }
+    if (rawPath.startsWith('/')) {
+        const abs = path.join(ASSETS_DIR, rawPath.replace(/^\//, ''));
+        if (!fs.existsSync(abs)) {
+            throw new Error(`IMAGE_ASSET_MISSING_ERROR: ${rawPath}`);
+        }
+        return `/assets${rawPath}`;
+    }
+    return rawPath;
+}
+
+function resolveCssPath(rawPath: string | null): string | null {
+    if (!rawPath || rawPath === 'none') return null;
+
+    if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) {
+        return rawPath;
+    }
+
+    let relative: string;
+    if (rawPath.startsWith('/assets/')) {
+        relative = rawPath.replace('/assets/', '');
+    } else {
+        relative = rawPath.replace(/^\//, '');
+    }
+
+    const abs = path.join(ASSETS_DIR, relative);
+    if (!fs.existsSync(abs)) {
+        throw new Error(`VISUAL_ASSET_MISSING_ERROR: ${rawPath}`);
+    }
+
+    return rawPath.startsWith('/assets/') ? rawPath : `/assets${rawPath.startsWith('/') ? '' : '/'}${rawPath}`;
+}

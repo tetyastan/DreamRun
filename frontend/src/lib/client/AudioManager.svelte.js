@@ -8,51 +8,38 @@
 export class AudioManager {
     constructor() {
         this.audioContext = null;
-
-        // id -> { source, gainNode, modifier, buffer }
         this.activeAudioPool = new Map();
-
-        // url -> AudioBuffer cache, so repeated music does not re-decode.
         this.bufferCache = new Map();
-
-        // id -> url, to know what to replay on resume after a one-shot
         this.trackUrlById = new Map();
     }
 
     // Pre-loading pipeline: concurrently resolves, streams, and caches high-density binary arrays over unstable connections
     async preloadAudioBuffers(urls) {
-        if (typeof window === 'undefined') return;
+        if (typeof window === 'undefined' || urls.length === 0) return;
         await this._ensureContext();
-
-        const tasks = urls.map(url => this._loadBuffer(url).catch(e => {
-            console.error(`[DreamRun][preload] Aggregation failure on endpoint target: ${url}`, e);
-        }));
+        const tasks = urls.map(url =>
+            this._loadBuffer(url).catch(e => {
+                console.error(`[DreamRun][preload] Failed: ${url}`, e);
+            })
+        );
         await Promise.all(tasks);
     }
 
-    async processAudioCommands(commands, publicApiUrl) {
-        if (!Array.isArray(commands) || commands.length === 0) {
-            return;
-        }
-
+    async processAudioCommands(commands) {
+        if (!Array.isArray(commands) || commands.length === 0) return;
         await this._ensureContext();
 
         for (const cmd of commands) {
             const { modifier, id } = cmd;
-
             if (modifier === 'sound' || modifier === 'music') {
-                await this._startTrack(cmd, publicApiUrl);
-            }
-            else if (modifier === 'modify') {
+                await this._startTrack(cmd);
+            } else if (modifier === 'modify') {
                 this._modifyTrack(cmd);
-            }
-            else if (modifier === 'pause') {
+            } else if (modifier === 'pause') {
                 this._pauseTrack(id);
-            }
-            else if (modifier === 'resume') {
+            } else if (modifier === 'resume') {
                 this._resumeTrack(id);
-            }
-            else if (modifier === 'stop') {
+            } else if (modifier === 'stop') {
                 this.stopAudio(id);
             }
         }
@@ -136,25 +123,21 @@ export class AudioManager {
         return audioBuffer;
     }
 
-    async _startTrack(cmd, publicApiUrl) {
+    async _startTrack(cmd) {
         const { modifier, id } = cmd;
-
-        if (cmd.path && cmd.path.startsWith('MISSING:')) {
-            console.warn(`[DreamRun][audio] Missing asset for id=${id}: ${cmd.path}`);
+        if (!cmd.path || cmd.path.startsWith('MISSING:')) {
+            console.warn(`[DreamRun][audio] Missing asset id=${id}: ${cmd.path}`);
             return;
         }
 
-        const srcUrl = cmd.path && cmd.path.startsWith('/assets')
-            ? `${publicApiUrl}${cmd.path}`
-            : cmd.path;
-
+        const srcUrl = cmd.path;
         this.stopAudio(id);
 
         let audioBuffer;
         try {
             audioBuffer = await this._loadBuffer(srcUrl);
         } catch (e) {
-            console.error(`[DreamRun][audio] Failed to load id=${id} from ${srcUrl}:`, e);
+            console.error(`[DreamRun][audio] Load failed id=${id}: ${srcUrl}`, e);
             return;
         }
 

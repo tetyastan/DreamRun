@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
 import { env } from '$env/dynamic/public';
 import { AudioManager } from './AudioManager.svelte';
 
@@ -8,6 +9,11 @@ import { AudioManager } from './AudioManager.svelte';
  */
 export class GameState {
     publicApiUrl = env.PUBLIC_API_URL;
+=======
+import { AudioManager } from './AudioManager.svelte.js';
+
+export class GameState {
+>>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
     audioManager = new AudioManager();
 
     currentScreen = $state('MENU');
@@ -44,9 +50,7 @@ export class GameState {
     constructor() {
         if (typeof window !== 'undefined') {
             const savedSpeed = localStorage.getItem('dreamrun_text_speed');
-            if (savedSpeed) {
-                this.textSpeed = parseInt(savedSpeed, 10);
-            }
+            if (savedSpeed) this.textSpeed = parseInt(savedSpeed, 10);
             $effect.root(() => {
                 $effect(() => {
                     localStorage.setItem('dreamrun_text_speed', this.textSpeed.toString());
@@ -59,11 +63,8 @@ export class GameState {
         this.isLoading = true;
         this.showLoadingUI = false;
         if (this.loadingTimeoutId) clearTimeout(this.loadingTimeoutId);
-
         this.loadingTimeoutId = setTimeout(() => {
-            if (this.isLoading) {
-                this.showLoadingUI = true;
-            }
+            if (this.isLoading) this.showLoadingUI = true;
         }, 2000);
     }
 
@@ -94,7 +95,6 @@ export class GameState {
         this.pendingNextStep = false;
         this.isGameStarted = false;
         this.dialogueQueue = [];
-        this.currentTextParts = [{ kind: 'text', value: '' }];
         this.currentChoices = [];
         this.currentDialogue = null;
         if (this.pauseTimerId) {
@@ -103,49 +103,6 @@ export class GameState {
         }
         this.pauseActive = false;
         this.sessionId = '';
-    }
-
-    resetGameState() {
-        this.audioManager.clearAll();
-        this.activeImages = [];
-        this.clearBlobCache();
-        this.sessionId = '';
-        this.currentSpeaker = null;
-        this.currentTextParts = [{ kind: 'text', value: '' }];
-        this.currentChoices = [];
-        this.currentDialogue = null;
-        if (this.pauseTimerId) {
-            clearTimeout(this.pauseTimerId);
-            this.pauseTimerId = null;
-        }
-        this.pauseActive = false;
-        this.playerVariables = {};
-        this.pendingNextStep = false;
-        this.isGameStarted = false;
-        this.dialogueQueue = [];
-        this.hasNext = false;
-        this.errorData = { status: 'None', message: 'None', details: 'None' };
-    }
-
-    handleGameEnd() {
-        this.audioManager.clearAll();
-        this.activeImages = [];
-        this.clearBlobCache();
-        this.currentScreen = 'MENU';
-        this.pendingNextStep = false;
-        this.isGameStarted = false;
-        this.currentSpeaker = null;
-        this.currentTextParts = [{ kind: 'text', value: '' }];
-        this.dialogueQueue = [];
-        this.currentChoices = [];
-        this.currentDialogue = null;
-        if (this.pauseTimerId) {
-            clearTimeout(this.pauseTimerId);
-            this.pauseTimerId = null;
-        }
-        this.pauseActive = false;
-        this.sessionId = '';
-        this.hasNext = false;
     }
 
     async parseAndShowBackendError(response) {
@@ -185,20 +142,16 @@ export class GameState {
     async decryptAndLoadStyle(url) {
         if (!url) return null;
         if (this.cssBlobCache.has(url)) return this.cssBlobCache.get(url);
-
         try {
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-            let rawText = await response.text();
-            const processedCss = rawText;
-
-            const blob = new Blob([processedCss], { type: 'text/css' });
+            const rawText = await response.text();
+            const blob = new Blob([rawText], { type: 'text/css' });
             const blobUrl = URL.createObjectURL(blob);
             this.cssBlobCache.set(url, blobUrl);
             return blobUrl;
         } catch (e) {
-            console.error(`[DreamRun][style] Decryption/Fetch exception on target: ${url}`, e);
+            console.error(`[DreamRun][style] Fetch failed: ${url}`, e);
             return null;
         }
     }
@@ -216,6 +169,7 @@ export class GameState {
             const { modifier, id } = cmd;
 
             if (modifier === 'show') {
+<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
                 const imgUrl = cmd.img_path?.startsWith('/assets')
                     ? `${this.publicApiUrl}${cmd.img_path}`
                     : cmd.img_path;
@@ -235,9 +189,12 @@ export class GameState {
                 const containerClass = getClassNameFromUrl(cmd.container_css);
                 const imageClass = getClassNameFromUrl(cmd.image_css);
 
+=======
+                const imgUrl = cmd.img_path || '';
+>>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
                 const [blobContainerStyle, blobImageStyle] = await Promise.all([
-                    this.decryptAndLoadStyle(containerStyleUrl),
-                    this.decryptAndLoadStyle(imageStyleUrl)
+                    this.decryptAndLoadStyle(cmd.container_css),
+                    this.decryptAndLoadStyle(cmd.image_css),
                 ]);
 
                 this.activeImages = this.activeImages.filter(img => img.id !== id);
@@ -247,6 +204,7 @@ export class GameState {
                     layer: cmd.layer ?? 10,
                     containerBlob: blobContainerStyle,
                     imageBlob: blobImageStyle,
+<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
                     containerClass,
                     imageClass,
                     isHiding: false
@@ -300,6 +258,25 @@ export class GameState {
                     if (img.id !== id) return img;
                     return { ...img, isHiding: true };
                 });
+=======
+                    isHiding: false,
+                });
+            } else if (modifier === 'modify') {
+                const target = this.activeImages.find(img => img.id === id);
+                if (target) {
+                    if (cmd.img_path) target.imgUrl = cmd.img_path;
+                    if (cmd.layer !== undefined) target.layer = cmd.layer;
+                    if (cmd.container_css) {
+                        target.containerBlob = await this.decryptAndLoadStyle(cmd.container_css);
+                    }
+                    if (cmd.image_css) {
+                        target.imageBlob = await this.decryptAndLoadStyle(cmd.image_css);
+                    }
+                }
+            } else if (modifier === 'hide') {
+                const target = this.activeImages.find(img => img.id === id);
+                if (target) target.isHiding = true;
+>>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
             }
         }
     }
@@ -315,7 +292,7 @@ export class GameState {
         }
 
         if (Array.isArray(dialogue.audio) && dialogue.audio.length > 0) {
-            this.audioManager.processAudioCommands(dialogue.audio, this.publicApiUrl);
+            this.audioManager.processAudioCommands(dialogue.audio);
         }
         if (Array.isArray(dialogue.images)) {
             this.processImageCommands(dialogue.images);
@@ -377,13 +354,8 @@ export class GameState {
                 if (Array.isArray(step.audio)) {
                     for (const cmd of step.audio) {
                         if ((cmd.modifier === 'sound' || cmd.modifier === 'music')
-                            && cmd.path
-                            && !cmd.path.startsWith('MISSING:')) {
-                            audioTargets.push(
-                                cmd.path.startsWith('/assets')
-                                    ? `${this.publicApiUrl}${cmd.path}`
-                                    : cmd.path
-                            );
+                            && cmd.path && !cmd.path.startsWith('MISSING:')) {
+                            audioTargets.push(cmd.path);
                         }
                     }
                 }
@@ -391,6 +363,7 @@ export class GameState {
                 if (Array.isArray(step.images)) {
                     for (const cmd of step.images) {
                         if (cmd.img_path && !cmd.img_path.startsWith('MISSING:')) {
+<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
                             const imgUrl = cmd.img_path.startsWith('/assets')
                                 ? `${this.publicApiUrl}${cmd.img_path}`
                                 : cmd.img_path;
@@ -414,6 +387,15 @@ export class GameState {
                                         : cmd.image_css
                                 )
                             );
+=======
+                            styleTargets.push(fetch(cmd.img_path).catch(() => {}));
+                        }
+                        if (cmd.container_css && cmd.container_css !== 'none') {
+                            styleTargets.push(this.decryptAndLoadStyle(cmd.container_css));
+                        }
+                        if (cmd.image_css && cmd.image_css !== 'none') {
+                            styleTargets.push(this.decryptAndLoadStyle(cmd.image_css));
+>>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
                         }
                     }
                 }
@@ -421,10 +403,14 @@ export class GameState {
 
             await Promise.all([
                 this.audioManager.preloadAudioBuffers(audioTargets),
+<<<<<<< Updated upstream:frontend/src/lib/GameState.svelte.js
                 ...styleTargets
+=======
+                ...styleTargets,
+>>>>>>> Stashed changes:frontend/src/lib/client/GameState.svelte.js
             ]);
         } catch (err) {
-            console.warn('[DreamRun][preload] Asset pipeline hydration fallback:', err);
+            console.warn('[DreamRun][preload] Asset hydration fallback:', err);
         }
 
         if (steps[0] && steps[0].type === 'choice') {
@@ -453,17 +439,16 @@ export class GameState {
         const generation = this.requestGeneration;
 
         try {
-            const response = await fetch(`${this.publicApiUrl}/api/game/choice`, {
+            const response = await fetch('/api/game/choice', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Session-ID': this.sessionId
+                    'X-Session-ID': this.sessionId,
                 },
-                body: JSON.stringify({ choice_index: choiceIndex })
+                body: JSON.stringify({ choice_index: choiceIndex }),
             });
 
             if (generation !== this.requestGeneration) return;
-
             if (!response.ok) {
                 await this.parseAndShowBackendError(response);
                 return;
@@ -471,20 +456,17 @@ export class GameState {
 
             const data = await response.json();
             if (data.variables) this.playerVariables = data.variables;
-
             this.currentChoices = [];
             await this.processBlock(data.steps);
         } catch (err) {
             if (generation !== this.requestGeneration) return;
             this.showError(
                 'CHOICE_SUBMIT_ERROR',
-                'Failed to transmit structural decision index mapping frames.',
+                'Failed to submit choice.',
                 err?.message || String(err)
             );
         } finally {
-            if (generation === this.requestGeneration) {
-                this.stopLoadingState();
-            }
+            if (generation === this.requestGeneration) this.stopLoadingState();
         }
     }
 
@@ -508,13 +490,12 @@ export class GameState {
         const generation = this.requestGeneration;
 
         try {
-            const response = await fetch(`${this.publicApiUrl}/api/game/next`, {
+            const response = await fetch('/api/game/next', {
                 method: 'POST',
-                headers: { 'X-Session-ID': this.sessionId }
+                headers: { 'X-Session-ID': this.sessionId },
             });
 
             if (generation !== this.requestGeneration) return;
-
             if (!response.ok) {
                 await this.parseAndShowBackendError(response);
                 return;
@@ -536,9 +517,7 @@ export class GameState {
                 err?.message || String(err)
             );
         } finally {
-            if (generation === this.requestGeneration) {
-                this.stopLoadingState();
-            }
+            if (generation === this.requestGeneration) this.stopLoadingState();
         }
     }
 
@@ -563,11 +542,6 @@ export class GameState {
     }
 
     async startGame() {
-        if (!this.publicApiUrl) {
-            this.showError('ENV_MISSING_ERROR', 'The .env setup configuration is missing.', '');
-            return;
-        }
-
         this.requestGeneration += 1;
         const generation = this.requestGeneration;
 
@@ -575,7 +549,7 @@ export class GameState {
         this.startLoadingState();
 
         try {
-            const response = await fetch(`${this.publicApiUrl}/api/game/start`, { method: 'POST' });
+            const response = await fetch('/api/game/start', { method: 'POST' });
             if (generation !== this.requestGeneration) return;
 
             if (!response.ok) {
@@ -596,11 +570,56 @@ export class GameState {
             }
         } catch (err) {
             if (generation !== this.requestGeneration) return;
-            this.showError('FETCH_ERROR', 'Backend connection error.', err?.message || String(err));
+            this.showError(
+                'FETCH_ERROR',
+                'Backend connection error.',
+                err?.message || String(err)
+            );
         } finally {
-            if (generation === this.requestGeneration) {
-                this.stopLoadingState();
-            }
+            if (generation === this.requestGeneration) this.stopLoadingState();
         }
+    }
+
+    resetGameState() {
+        this.audioManager.clearAll();
+        this.activeImages = [];
+        this.clearBlobCache();
+        this.sessionId = '';
+        this.currentSpeaker = null;
+        this.currentText = '';
+        this.currentChoices = [];
+        this.currentDialogue = null;
+        if (this.pauseTimerId) {
+            clearTimeout(this.pauseTimerId);
+            this.pauseTimerId = null;
+        }
+        this.pauseActive = false;
+        this.playerVariables = {};
+        this.pendingNextStep = false;
+        this.isGameStarted = false;
+        this.dialogueQueue = [];
+        this.hasNext = false;
+        this.errorData = { status: 'None', message: 'None', details: 'None' };
+    }
+
+    handleGameEnd() {
+        this.audioManager.clearAll();
+        this.activeImages = [];
+        this.clearBlobCache();
+        this.currentScreen = 'MENU';
+        this.pendingNextStep = false;
+        this.isGameStarted = false;
+        this.currentSpeaker = null;
+        this.currentText = '';
+        this.dialogueQueue = [];
+        this.currentChoices = [];
+        this.currentDialogue = null;
+        if (this.pauseTimerId) {
+            clearTimeout(this.pauseTimerId);
+            this.pauseTimerId = null;
+        }
+        this.pauseActive = false;
+        this.sessionId = '';
+        this.hasNext = false;
     }
 }

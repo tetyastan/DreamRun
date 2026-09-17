@@ -1,0 +1,50 @@
+## --- Configuration ---
+[config "game_init"/]
+
+## --- TypeScript setup ---
+[ts]
+    hero.hp = 100
+    hero.gold = starting_gold
+    hero.mood = 'alert'
+[/ts]
+
+## --- Inline TS ---
+[ts "hero.hp -= 10"/]
+
+:hero: > "I have {hero.gold} gold and {hero.hp} HP left."
+
+## --- Python setup ---
+[python]
+    hero.hp = max(0, hero.hp - 15)
+    hero.flags = hero.flags or []
+    hero.flags.append("wounded")
+[/python]
+
+:hero: > "Python brought me down to {hero.hp} HP."
+
+## --- Inline Python ---
+[python "hero.gold += 50"/]
+
+:hero: > "And now I have {hero.gold} gold."
+
+## --- Conditional (evaluated in JS) ---
+[if hero.hp > 50]
+    > "You feel strong."
+[elif hero.hp > 20]
+    > "You are wounded."
+[else]
+    > "You are dying."
+[/if]
+
+## --- Choice ---
+[choice]
+    [answer "Rest at the inn"]
+        [ts "hero.hp = Math.min(100, hero.hp + 30)"/]
+        > "You rest. HP is now {hero.hp}."
+    [/answer]
+
+    [answer "Pray at the altar"]
+        [python "hero.hp = min(100, hero.hp + 20)"]
+        > "You pray. HP is now {hero.hp}."
+    [/answer]
+[/choice]
