@@ -1,0 +1,18 @@
+## ============================================================
+## Epilogue — end of the test scenario
+## ============================================================
+
+> "[epilogue] You have reached the end of the test scenario."
+
+:hero: > "[epilogue] Final state: HP={hero.hp}, Gold={hero.gold}, Mood={hero.mood}"
+
+[if hero.hp > 50]
+    > "[epilogue if] You finished strong."
+[else]
+    > "[epilogue else] You finished wounded."
+[/if]
+
+[audio music "/audio/ambient_loop.wav" bgm_final "0.5~2000" "1.0"/]
+> "[epilogue audio] Final music fading in."
+
+> "[epilogue] Thank you for testing DreamRun."

@@ -1,0 +1,237 @@
+## ============================================================
+## DreamRun Complete Test Scenario
+##
+## Covers:
+##   - [config] import
+##   - [ts] and [python] inline and multi-line blocks
+##   - [image show/modify/hide]
+##   - [audio sound/music/modify/pause/resume/stop]
+##   - all three dialogue forms (narrator, literal, variable)
+##   - {name}, {obj.field}, {0..N : ms}, {..N : ms}, {N~ms}
+##   - [if]/[elif]/[else]
+##   - [choice] with paired and self-closing answers
+##   - [ref] with [jump] (returns) and [goto] (does not return)
+##   - [pass/], [pause], [pause block/]
+##   - [next] act transition
+## ============================================================
+
+## ------------------------------------------------------------
+## 1. CONFIG AND BACKGROUND
+## ------------------------------------------------------------
+
+[config "game_init"/]
+[image show "/bg/cyberpunk_lab.png" bg 0 "/styles/bg_cover.css" ""/]
+
+> "[config] game_init loaded. starting_gold = {starting_gold}"
+
+## ------------------------------------------------------------
+## 2. AUDIO
+## ------------------------------------------------------------
+
+[audio music "/audio/ambient_loop.wav" bgm "0.1~1500" "1.0"/]
+> "[audio music] Ambient started with 1.5s fade-in to 30%."
+
+[audio modify bgm "0.6~5000" "1.0"/]
+> "[audio modify] Volume ramped to 60%."
+
+[audio pause bgm/]
+> "[audio pause] Paused."
+
+[audio resume bgm/]
+> "[audio resume] Resumed."
+
+[audio stop bgm/]
+> "[audio stop] Ambient stopped."
+
+## ------------------------------------------------------------
+## 3. TS AND PYTHON INLINE AND MULTILINE
+## ------------------------------------------------------------
+
+[ts "hero.gold = starting_gold"/]
+[ts "hero.hp = 100"/]
+
+:hero: > "[ts inline] Starting with {hero.gold} gold, {hero.hp} HP."
+
+[ts]
+    hero.mood = 'alert'
+    hero.flags = []
+[/ts]
+
+:hero: > "[ts multiline] Mood is {hero.mood}."
+
+[python "hero.gold += 50"/]
+
+:hero: > "[python inline] After python, gold is {hero.gold}."
+
+[python]
+    hero.hp = max(0, hero.hp - 25)
+    hero.flags.append("wounded")
+    hero.has_armor = False
+[/python]
+
+:hero: > "[python multiline] HP is {hero.hp}, flags include 'wounded'."
+
+## ------------------------------------------------------------
+## 3. SHARED ENV BETWEEN LANGUAGES
+## ------------------------------------------------------------
+
+[ts "hero.hp = hero.hp + 10"/]
+:hero: > "[ts -> python] HP after TS bump: {hero.hp}."
+
+[python "hero.hp = hero.hp - 5"]
+:hero: > "[python -> ts] HP after Python dip: {hero.hp}."
+
+[python "hero.gold = hero.gold + (10 if hero.hp > 50 else 0)"/]
+:hero: > "[conditional ts] Gold after HP check: {hero.gold}."
+
+## ------------------------------------------------------------
+## 4. DIALOGUE FORMS
+## ------------------------------------------------------------
+
+> "[narrator] This line has no speaker."
+
+Aria > "[literal speaker] My name is shown verbatim."
+
+:hero: > "[variable speaker] I am {hero.name}."
+
+:ghost: > "[variable speaker, other char] I am {ghost.name}."
+
+:unknown_character: > "[variable fallback] Unknown key shows as-is."
+
+## ------------------------------------------------------------
+## 5. CONDITIONAL BLOCKS
+## ------------------------------------------------------------
+
+[if hero.hp > 50]
+    > "[if true] HP above 50, branch taken."
+[else]
+    > "[if false] This line should not appear."
+[/if]
+
+[if hero.hp < 20]
+    > "[if false] This line should not appear."
+[elif hero.hp < 80]
+    > "[elif] HP between 20 and 80, elif branch taken."
+[else]
+    > "[else] This line should not appear. {hero.hp}"
+[/if]
+
+[if hero.gold > 100 && hero.hp > 30]
+    > "[if compound] Both conditions true."
+[/if]
+
+[if test_flag]
+    > "[if flag false] This line should not appear."
+[else]
+    > "[if flag else] Flag is false, else branch."
+[/if]
+
+## ------------------------------------------------------------
+## 6. PASS AND PAUSE
+## ------------------------------------------------------------
+
+[pass/]
+> "[pass] Executed [pass/] and continued."
+
+[pause 1000/]
+> "[pause] Waited 1000ms."
+
+[pause 1000 block/]
+> "[pause block] Waited 1000ms with block flag."
+
+## ------------------------------------------------------------
+## 7. IMAGES
+## ------------------------------------------------------------
+
+[image show "/images/sprite.png" hero_sprite 10 "/styles/hero_in.css" "/styles/hero_in_img.css"/]
+> "[image show] Hero appears with slide-in animation."
+
+[image modify "/images/sprite.png" hero_sprite 15 "/styles/fade_out.css" "/styles/fade_out_img.css"/]
+> "[image modify] Hero layer changed to 15, new CSS applied."
+
+## ------------------------------------------------------------
+## 8. CHOICE WITH PAIRED ANSWERS
+## ------------------------------------------------------------
+
+> "[choice] Choose a path."
+
+[choice]
+    [answer "Rest at the inn"]
+        [ts "hero.hp = Math.min(100, hero.hp + 30)"/]
+        > "[choice A] Rested. HP is now {hero.hp}."
+    [/answer]
+
+    [answer "Pray at the altar"]
+        [python]
+            hero.hp = min(100, hero.hp + 20)
+            hero.reputation = 1
+        [/python]
+        > "[choice B] Prayed. HP is now {hero.hp}."
+    [/answer]
+
+    [answer "Do nothing"]
+        [pass/]
+        > "[choice C] Did nothing."
+    [/answer]
+[/choice]
+
+## ------------------------------------------------------------
+## 9. NESTED CHOICE
+## ------------------------------------------------------------
+
+> "[nested choice] Pick a category."
+
+[choice]
+    [answer "Combat"]
+        > "[nested] You chose combat."
+        [choice]
+            [answer "Attack"]
+                > "[nested A] You attack."
+            [/answer]
+            [answer "Defend"]
+                > "[nested B] You defend."
+            [/answer]
+        [/choice]
+        > "[nested end] Combat resolved."
+    [/answer]
+
+    [answer "Talk"]
+        > "[nested] You chose talk."
+    [/answer]
+[/choice]
+
+## ------------------------------------------------------------
+## 10. REFS AND JUMPS
+## ------------------------------------------------------------
+
+> "[jump] Calling a ref."
+
+[jump show_status/]
+
+> "[jump return] Back from show_status."
+
+[goto finale/]
+
+> "[goto skip] This line should not appear."
+
+## ------------------------------------------------------------
+## 11. REF DEFINITIONS
+## ------------------------------------------------------------
+
+[ref show_status]
+    > "[ref show_status] Status report:"
+    :hero: > "[ref] HP: {hero.hp}, Gold: {hero.gold}"
+
+    [if hero.hp > 50]
+        :hero: > "[ref if] I feel strong."
+    [else]
+        :hero: > "[ref else] I feel weak."
+    [/if]
+[/ref]
+
+[ref finale]
+    > "[ref finale] Reached the finale via [goto]."
+    :hero: > "[ref finale] Final HP: {hero.hp}, Gold: {hero.gold}"
+    > "[ref finale] Continuing to the epilogue."
+    [next "epilogue.dreamrun"/]
+[/ref]
