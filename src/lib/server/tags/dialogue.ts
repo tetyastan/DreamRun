@@ -4,35 +4,54 @@ import { cleanDialogueText } from '../text_utils.js';
 import { Character } from '../runtime_types.js';
 
 /**
- * Builds the final dialogue frame, resolving {name} and {obj.field}
- * placeholders against the runtime env. Animated forms ({0..500 : 2000})
- * are left in the text and resolved by the client.
+ * Builds the final dialogue frame for the client.
+ *
+ * Placeholders of the form {expr} are resolved against the runtime
+ * env. Animated counters ({0..500 : 2000}, {..var : 1000}) are left
+ * untouched so the client can animate them.
+ *
+ * Any placeholder that fails to resolve is left as-is so the author
+ * sees exactly what did not compile.
  */
-function buildFrame(step: Step, name: string | null, ctx: ExecContext): Frame {
+export function buildFrame(step: Step, name: string | null, ctx: ExecContext): Frame {
     const raw = step.raw_text as string;
+    
+    if (!raw) {
+        return {
+            type: 'dialogue',
+            name,
+            text: raw,
+        };
+    }
+
     let resolved = raw;
 
-    if (resolved) {
-        resolved = resolved.replace(
-            /\{([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\}/g,
-            (_match, expr: string) => {
+    try {
+        // Convert {expr} to ${expr} and evaluate the result as a
+        // template literal. Placeholders that start with a digit or
+        // contain '..' or '~' are animation descriptors and are not
+        // touched.
+        const templateString = raw
+            .replace(/`/g, '\\` electro_escape_backtick')
+            .replace(/\{(?!\d+(?:\.\d+)?(?:\.\.|~))([^}]+)\}/g, '\${\$1}');
+
+        const templateEvaluator = new Function('env', 'templateString', `
+            with (env) {
                 try {
-                    const keys = Object.keys(ctx.env).filter(k =>
-                        /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k)
-                    );
-                    const values = keys.map(k => ctx.env[k]);
-                    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-                    const fn = new Function(...keys, `return (${expr});`);
-                    const value = fn(...values);
-                    if (typeof value === 'number' && Number.isInteger(value)) {
-                        return String(value);
-                    }
-                    return String(value);
+                    return eval('\` ' + templateString + ' \`').slice(1, -1);
                 } catch {
-                    return `{${expr}}`;
+                    return null;
                 }
             }
-        );
+        `);
+
+        const result = templateEvaluator(ctx.env, templateString);
+        
+        if (result !== null) {
+            resolved = result;
+        }
+    } catch (err) {
+        console.warn(`[DreamRun][dialogue] Template compilation failed for text: "${raw}"`, err);
     }
 
     return {
@@ -42,6 +61,11 @@ function buildFrame(step: Step, name: string | null, ctx: ExecContext): Frame {
     };
 }
 
+/**
+ * Handles :var: > "text". The speaker name is taken from the Character
+ * stored in env under `key`. If the value is not a Character, the raw
+ * key is shown as a fallback.
+ */
 export class VariableSpeakerTag extends BaseTag {
     name = 'dialogue.variable';
     private readonly PATTERN = /^:([A-Za-z_][A-Za-z0-9_]*):\s*>\s*(.*)$/;
@@ -69,6 +93,10 @@ export class VariableSpeakerTag extends BaseTag {
     }
 }
 
+/**
+ * Handles "Name > text". The speaker name is the literal string
+ * before the > sign.
+ */
 export class LiteralSpeakerTag extends BaseTag {
     name = 'dialogue.literal';
     private readonly PATTERN = /^([^>]+)>\s*(.*)$/;
@@ -94,6 +122,9 @@ export class LiteralSpeakerTag extends BaseTag {
     }
 }
 
+/**
+ * Handles "> text". No speaker name.
+ */
 export class NarratorTag extends BaseTag {
     name = 'dialogue.narrator';
 

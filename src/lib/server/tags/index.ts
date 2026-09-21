@@ -14,6 +14,13 @@ import {
 
 let bootstrapped = false;
 
+/**
+ * Registers every built-in tag exactly once.
+ *
+ * Order is significant: scope and structural tags come first so that
+ * their brackets are not mistaken for dialogue text by the looser
+ * dialogue matchers. Dialogue tags come last.
+ */
 export function bootstrapTags(): void {
     if (bootstrapped) return;
     bootstrapped = true;

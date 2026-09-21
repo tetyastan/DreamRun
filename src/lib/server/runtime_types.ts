@@ -15,10 +15,10 @@ export class Character {
             this[k] = v;
         }
 
-        // Wrap in a Proxy so that missing attributes read as null.
-        // This mirrors the Python __getattr__ fallback from the
-        // original engine and keeps template placeholders like
-        // {hero.level} from crashing when the field was never set.
+        // Wrap the instance in a Proxy so that reading an undefined
+        // field returns null instead of undefined. This mirrors the
+        // Python __getattr__ fallback from the original engine and
+        // keeps templates like {hero.level} from crashing.
         return new Proxy(this, {
             get(target, prop, receiver) {
                 if (prop in target) {
@@ -34,8 +34,10 @@ export class Character {
 }
 
 /**
- * Numeric proxy that carries an animation duration. Behaves like a
- * number in arithmetic, serializes to { from?, to, duration_ms }.
+ * Numeric proxy that carries an animation duration.
+ *
+ * Behaves like a number in arithmetic and comparisons. When passed to
+ * the evaluator, it serializes to { from?, to, duration_ms }.
  */
 export class Ramp {
     to_value: number;
@@ -48,6 +50,10 @@ export class Ramp {
         this.from_value = from;
     }
 
+    /**
+     * Wire format consumed by the client. `from` is omitted when the
+     * ramp should start from the current value on the client side.
+     */
     serialize(): Record<string, unknown> {
         const out: Record<string, unknown> = {
             to: this.to_value,

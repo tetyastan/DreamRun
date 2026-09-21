@@ -1,5 +1,6 @@
 import { BaseTag, TagParseResult, type ExecResult } from './base.js';
 import type { Step, ExecContext, ParseContext } from '../types.js';
+import { EngineError } from '$lib/server/errors.js';
 
 interface Branch {
     mode: 'if' | 'elif' | 'else';
@@ -10,9 +11,13 @@ interface Branch {
 /**
  * Handles [if expr], [elif expr], [else], [/if].
  *
- * Conditions are evaluated as JavaScript expressions against the
- * shared runtime env. The distinction between Python and TS
- * expressions is not made here — see the Wiki for the rationale.
+ * Opening pushes an `if_builder` frame. Each elif/else packages the
+ * previous branch and starts a new one. Closing emits a single
+ * `conditional_block` step containing all branches.
+ *
+ * Conditions are JavaScript expressions, evaluated against the shared
+ * runtime env. Python syntax (`and`, `or`, `not`) is not supported
+ * here — use && / || / ! instead.
  */
 export class ConditionalTag extends BaseTag {
     name = 'conditional';
@@ -101,6 +106,15 @@ export class ConditionalTag extends BaseTag {
         return new TagParseResult({ consumed: false });
     }
 
+    /**
+     * Walks the branches top-down. The first branch whose condition is
+     * truthy (or the first else branch) is injected ahead of the
+     * pointer. If none match, the block does nothing.
+     *
+     * A condition that fails to evaluate raises EngineError so that
+     * the client receives a structured diagnostic rather than a bare
+     * 500.
+     */
     execute(step: Step, ctx: ExecContext): ExecResult {
         if (step.type !== 'conditional_block') return null;
 
@@ -113,8 +127,11 @@ export class ConditionalTag extends BaseTag {
                 try {
                     result = evaluateCondition(condition, ctx.env);
                 } catch (err) {
-                    throw new Error(
-                        `CONDITIONAL_EVAL_ERROR: '${condition}' — ${String(err)}`
+                    throw new EngineError(
+                        'CONDITIONAL_EVAL_ERROR',
+                        `Script syntax error in condition: [if ${condition}]`,
+                        err instanceof Error ? err.message : String(err),
+                        422
                     );
                 }
                 if (result) return ['inject', branch.steps];
@@ -127,6 +144,9 @@ export class ConditionalTag extends BaseTag {
     }
 }
 
+/**
+ * Evaluates one condition string with the env keys as scope.
+ */
 function evaluateCondition(expr: string, env: Record<string, unknown>): boolean {
     const keys = Object.keys(env).filter(k => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k));
     const values = keys.map(k => env[k]);

@@ -3,7 +3,7 @@ import { getPyodide } from './pyodide_runtime.js';
 
 /**
  * Raised when scenario code fails. Carries the original exception so
- * the runtime can build a diagnostic HTTP response.
+ * that the runtime can build a diagnostic HTTP response.
  */
 export class ScriptRuntimeError extends Error {
     lang: 'python' | 'ts';
@@ -19,6 +19,11 @@ export class ScriptRuntimeError extends Error {
     }
 }
 
+/**
+ * Dispatches a script block to the correct runtime. Both [ts] and
+ * [python] blocks produce a `script_exec` step with a `lang` field,
+ * so this is the single entry point for scenario code execution.
+ */
 export async function runScript(
     lang: 'python' | 'ts',
     code: string,
@@ -33,25 +38,22 @@ export async function runScript(
 // TypeScript execution
 // ---------------------------------------------------------------------
 
+/**
+ * Runs a [ts] block.
+ *
+ * The code is wrapped in a `with (env)` statement so that reads and
+ * writes of top-level variables like `hero` or `flags` resolve against
+ * the runtime environment. `ctx` and `env` are also passed as function
+ * parameters so that shadowed names still work.
+ */
 function runTs(code: string, ctx: ExecContext): void {
     try {
-        const env = ctx.env;
-        // Filter env keys that are valid JS identifiers.
-        const keys = Object.keys(env).filter(k => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k));
-        const values = keys.map(k => env[k]);
-
-        // The function body is the scenario code. Env keys are passed
-        // as parameters so that:
-        //   - reads of `hero`, `Ramp`, etc. work directly
-        //   - mutations like `hero.hp = 100` persist (hero is an object)
-        //   - top-level scalar assignments do NOT persist, because JS
-        //     function parameters are local bindings.
-        //
-        // Scenario authors who need top-level persistence should mutate
-        // an object (`state.counter += 1`) or use [python].
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
-        const fn = new Function('ctx', 'env', ...keys, code);
-        fn(ctx, env, ...values);
+        const runner = new Function('ctx', 'env', `
+            with (env) {
+                ${code}
+            }
+        `);
+        runner(ctx, ctx.env);
     } catch (err) {
         throw new ScriptRuntimeError('ts', code, err);
     }
@@ -61,37 +63,51 @@ function runTs(code: string, ctx: ExecContext): void {
 // Python execution
 // ---------------------------------------------------------------------
 
+// Serializes calls into Pyodide. Pyodide is not reentrant, so concurrent
+// requests must wait for each other.
+let pyodideLock: Promise<void> = Promise.resolve();
+
+/**
+ * Runs a [python] block.
+ *
+ * The session env is passed into Python as a PyProxy, so attribute
+ * reads and writes propagate between the two languages. After the
+ * block finishes, syncPythonToJs copies any top-level scalar
+ * reassignments back into the JS env.
+ *
+ * The lock around pyodideLock guarantees that only one Python block
+ * executes at a time.
+ */
 async function runPython(code: string, ctx: ExecContext): Promise<void> {
+    const currentLock = pyodideLock;
+    let resolveLock: () => void;
+    pyodideLock = new Promise(r => { resolveLock = r; });
+    await currentLock;
+
     const py = await getPyodide();
-
     let envProxy: any = null;
+    
     try {
-        // toPy creates a PyProxy wrapping the JS object. Reads and writes
-        // of attributes delegate to JS. New top-level keys become new
-        // properties on the JS object.
         envProxy = py.toPy(ctx.env);
-
-        // Execute the scenario code with env as the global namespace.
         py.runPython(code, { globals: envProxy });
-
-        // PyProxy changes propagate automatically for nested objects.
-        // For top-level scalar writes we copy values back explicitly.
         syncPythonToJs(envProxy, ctx.env);
     } catch (err) {
         throw new ScriptRuntimeError('python', code, err);
     } finally {
         if (envProxy && typeof envProxy.destroy === 'function') {
-            // Do NOT destroy: env is reused across requests and the
-            // proxy wraps the live JS object. Destroying would break
-            // subsequent Python runs.
-            // envProxy.destroy();
+            envProxy.destroy();
         }
+        resolveLock!();
     }
 }
 
+/**
+ * Copies top-level scalars from the Python proxy back into the JS
+ * env. Nested object mutations are already visible because the proxy
+ * wraps the live JS object, but a statement like `flags = []` inside
+ * Python replaces the binding and must be mirrored explicitly.
+ */
 function syncPythonToJs(pyEnv: any, jsEnv: Record<string, unknown>): void {
-    // Copy top-level scalar values that may have been reassigned inside
-    // the Python block. Nested object mutations are already live.
     try {
         const keys: string[] = Array.from(pyEnv.keys());
         for (const key of keys) {
@@ -112,8 +128,5 @@ function syncPythonToJs(pyEnv: any, jsEnv: Record<string, unknown>): void {
 }
 
 function unwrapPyValue(value: unknown): unknown {
-    // Pyodide returns PyProxy for objects and plain JS values for
-    // primitives. We return as-is; the evaluator handles Ramp and
-    // Character via duck typing.
     return value;
 }

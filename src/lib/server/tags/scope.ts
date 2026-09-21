@@ -1,8 +1,12 @@
 import { BaseTag, TagParseResult } from './base.js';
-import type { ParseContext, ScopeFrame } from '../types.js';
+import type { ParseContext } from '../types.js';
 
 /**
- * Handles [ref name] ... [/ref].
+ * [ref name] ... [/ref] — isolated subroutine.
+ *
+ * Opening pushes a `ref` frame. Closing registers the collected steps
+ * in the references map under the given name. Nested refs are not
+ * allowed.
  */
 export class RefTag extends BaseTag {
     name = 'ref';
@@ -35,7 +39,9 @@ export class RefTag extends BaseTag {
 }
 
 /**
- * Handles [choice] ... [/choice].
+ * [choice] ... [/choice] — branch menu.
+ *
+ * A choice cannot be nested inside a [ref] block.
  */
 export class ChoiceTag extends BaseTag {
     name = 'choice';
@@ -70,7 +76,10 @@ export class ChoiceTag extends BaseTag {
 }
 
 /**
- * Handles [answer "text"] ... [/answer].
+ * [answer "text"] ... [/answer] — a single option inside a [choice].
+ *
+ * The parent block must be a choice. Nested answers, or answers
+ * outside a choice, are rejected.
  */
 export class AnswerTag extends BaseTag {
     name = 'answer';

@@ -7,10 +7,11 @@ import type { Session } from './types.js';
 /**
  * Loads a config file (.ts or .js) into the runtime env.
  *
- * In development Vite handles .ts transpilation on the fly.
- * In production the config files should be compiled to .js during
- * the build. If only .ts files exist at runtime, the engine will
- * attempt to load them anyway and fail with a clear error.
+ * The file is imported as an ES module. Every named export is merged
+ * into `env`. The `default` export, if it is an object, is merged too.
+ *
+ * `Character` and `Ramp` are never overwritten: they are engine-owned
+ * classes that must remain stable across config loads.
  */
 export async function loadConfigFile(
     filename: string,
@@ -18,6 +19,8 @@ export async function loadConfigFile(
 ): Promise<void> {
     const target = ensureExtension(filename);
 
+    // Accept both absolute and relative paths. Relative paths are
+    // resolved against CONFIG_DIR.
     const absolute = path.isAbsolute(target)
         ? target
         : path.join(CONFIG_DIR, target);
@@ -32,11 +35,12 @@ export async function loadConfigFile(
     for (const [key, value] of Object.entries(mod)) {
         if (key === 'default') continue;
         if (key.startsWith('__')) continue;
-        if (key === 'Character') continue;   // ← добавить
-        if (key === 'Ramp') continue;        // ← добавить
+        if (key === 'Character') continue;
+        if (key === 'Ramp') continue;
         env[key] = value;
     }
 
+    // Support the pattern: export default { hero, merchant, ... }
     const defaultExport = (mod as { default?: unknown }).default;
     if (defaultExport && typeof defaultExport === 'object') {
         for (const [key, value] of Object.entries(defaultExport)) {
@@ -47,11 +51,18 @@ export async function loadConfigFile(
     }
 }
 
+/**
+ * Appends `.ts` unless the filename already carries an extension.
+ */
 function ensureExtension(filename: string): string {
     if (filename.endsWith('.ts') || filename.endsWith('.js')) return filename;
     return `${filename}.ts`;
 }
 
+/**
+ * Loads the global --vars.ts file into a freshly created session.
+ * This runs once per session, on /api/start.
+ */
 export async function loadDefaultVars(session: Session): Promise<void> {
     if (!fs.existsSync(DEFAULT_CONFIG_FILE)) {
         throw new Error(`Default vars file not found: ${DEFAULT_CONFIG_FILE}`);

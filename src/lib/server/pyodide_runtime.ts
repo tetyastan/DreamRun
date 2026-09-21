@@ -1,16 +1,15 @@
 import type { PyodideInterface } from 'pyodide';
 
+// Singleton promise. The Pyodide runtime is loaded at most once per
+// Node process. Scenarios that use only [ts] never trigger the load.
 let pyodidePromise: Promise<PyodideInterface> | null = null;
 
 /**
- * Python source injected into every new Pyodide instance.
+ * Python code injected into every new Pyodide instance.
  *
- * Defines Python-side versions of types that scenarios expect to
- * exist in the environment. Currently this is only `Ramp`, since
- * scenarios that need it construct it from Python code.
- *
- * `Character` is NOT redefined here: it lives as a JS class and is
- * accessed through the shared env proxy.
+ * Defines a Python-side Ramp class so that scenario authors can
+ * construct ramps from [python] blocks. The JS-side Ramp class is
+ * separate and lives in runtime_types.ts.
  */
 const PYTHON_BOOTSTRAP = `
 class Ramp:
@@ -43,9 +42,9 @@ class Ramp:
 `;
 
 /**
- * Lazily loads Pyodide. The WASM runtime is only initialised the first
- * time a [python] block is executed. Scenarios that use only [ts] never
- * pay the ~5-second cold start.
+ * Lazily loads Pyodide. The WASM runtime is only initialised the
+ * first time a [python] block executes. Subsequent calls reuse the
+ * same instance.
  */
 export async function getPyodide(): Promise<PyodideInterface> {
     if (!pyodidePromise) {

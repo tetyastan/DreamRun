@@ -24,6 +24,11 @@ export class EngineError extends Error {
         this.details = details;
     }
 
+    /**
+     * Serializes the error into the JSON envelope that the client
+     * expects. Callers pass the returned object to `json()` from
+     * `@sveltejs/kit`.
+     */
     toResponse(): { status: number; body: unknown } {
         return {
             status: this.httpStatus,
@@ -38,6 +43,10 @@ export class EngineError extends Error {
     }
 }
 
+/**
+ * Raised when a scenario references a file that does not exist on disk.
+ * Used by visual and audio tags for images, audio files, and CSS.
+ */
 export class AssetMissingError extends EngineError {
     constructor(kind: string, path: string, expected: string | null = null) {
         super(
@@ -50,6 +59,9 @@ export class AssetMissingError extends EngineError {
     }
 }
 
+/**
+ * Raised when a [config] file cannot be found under CONFIG_DIR.
+ */
 export class ConfigMissingError extends EngineError {
     constructor(path: string, expected: string | null = null) {
         super(
@@ -62,6 +74,10 @@ export class ConfigMissingError extends EngineError {
     }
 }
 
+/**
+ * Raised when a [jump] or [goto] references a [ref] name that was
+ * never declared in the current act or in any previously loaded act.
+ */
 export class ReferenceNotFoundError extends EngineError {
     constructor(target: string) {
         super(
@@ -74,6 +90,9 @@ export class ReferenceNotFoundError extends EngineError {
     }
 }
 
+/**
+ * Raised when a [next] tag points to an act file that does not exist.
+ */
 export class ChapterMissingError extends EngineError {
     constructor(name: string, expected: string | null = null) {
         super(

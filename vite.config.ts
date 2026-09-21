@@ -1,26 +1,24 @@
-import adapter from '@sveltejs/adapter-auto';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type ViteDevServer } from 'vite';
+
+function gameSocketPlugin() {
+    return {
+        name: 'dreamrun-game-socket',
+        async configureServer(server: ViteDevServer) {
+            if (!server.httpServer) return;
+
+            // Imported lazily so that vite.config.ts itself has no
+            // dependency on $lib-aliased code. By the time this hook
+            // runs, SvelteKit has already registered its resolver and
+            // the gateway's own imports will resolve correctly.
+            const { attachGameSocket } = await server.ssrLoadModule(
+                '/src/lib/server/ws_bootstrap.ts'
+            );
+            attachGameSocket(server.httpServer);
+        },
+    };
+}
 
 export default defineConfig({
-	plugins: [
-		sveltekit({
-			compilerOptions: {
-				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
-				runes: ({ filename }) =>
-					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
-			},
-
-			// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-			// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-			adapter: adapter()
-		})
-	],
-	ssr: {
-        external: ['pyodide'],
-    },
-    optimizeDeps: {
-        exclude: ['pyodide'],
-    },
+    plugins: [sveltekit(), gameSocketPlugin()],
 });

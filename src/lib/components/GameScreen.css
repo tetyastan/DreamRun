@@ -144,3 +144,33 @@
     max-height: 100%;
     object-fit: contain;
 }
+
+.interface-toolbar {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    display: flex;
+    gap: 4px;
+    z-index: 6;
+}
+
+.toolbar-btn {
+    padding: 10px 20px;
+    background: #000000;
+    color: #ffffff;
+    border: none;
+    font-weight: bold;
+    font-size: 0.9rem;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+    background: #3a3a3c;
+}
+
+.toolbar-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

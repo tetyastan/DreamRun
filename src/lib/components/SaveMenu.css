@@ -1,0 +1,251 @@
+.save-container {
+    display: flex;
+    flex-direction: column;
+    /* Changed from center to flex-start to prevent pushing content beyond screen edges */
+    justify-content: flex-start;
+    align-items: center;
+    padding: 20px 15px;
+    box-sizing: border-box;
+    width: 100%;
+    /* Enforce hardware-accelerated fluid scrolling on portable touch surfaces */
+    min-height: 100vh;
+    overflow-y: auto;
+    background-color: #ffffff;
+    -webkit-overflow-scrolling: touch;
+}
+
+.save-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    border-bottom: 2px solid #000000;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+    width: 100%;
+    max-width: 800px;
+    /* Prevent header compression inside flexible flexbox hierarchies */
+    flex-shrink: 0;
+}
+
+.tab {
+    padding: 8px 22px;
+    background: transparent;
+    color: #000000;
+    border: 2px solid #000000;
+    font-weight: bold;
+    font-size: 1.05rem;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+
+.tab:hover {
+    background: #000000;
+    color: #ffffff;
+}
+
+.tab.active {
+    background: #ff0000;
+    color: #ffffff;
+    border-color: #ff0000;
+}
+
+.save-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    justify-content: center;
+    align-content: start;
+    width: 100%;
+    max-width: 800px;
+    box-sizing: border-box;
+    /* Allow grid to expand its height naturally without blocking parent layout flows */
+    flex-grow: 1;
+}
+
+.slot {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    background: #ffffff;
+    border: 2px solid #000000;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.1s, transform 0.05s;
+    overflow: hidden;
+    width: 100%;
+    max-width: 220px;
+    box-sizing: border-box;
+    justify-self: center;
+}
+
+.slot:hover:not(:disabled) {
+    border-color: #ff0000;
+}
+
+.slot:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.slot:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.slot.empty {
+    border-style: dashed;
+}
+
+.slot-thumb {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    display: block;
+    background: #000000;
+}
+
+.slot-thumb.placeholder {
+    background: repeating-linear-gradient(
+        45deg,
+        #ffffff,
+        #ffffff 10px,
+        #f0f0f0 10px,
+        #f0f0f0 20px
+    );
+    border-bottom: 2px solid #000000;
+}
+
+.slot-caption {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    border-top: 2px solid #000000;
+    box-sizing: border-box;
+    width: 100%;
+    overflow: hidden;
+}
+
+.slot-date {
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #000000;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.slot-stamp {
+    font-size: 0.8rem;
+    color: #ff0000;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+    display: block;
+}
+
+.save-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 30px;
+    /* Append explicit padding buffer at the bottom to guarantee visibility over mobile browser utility toolbars */
+    padding: 15px 0 25px 0;
+    border-top: 2px solid #000000;
+    width: 100%;
+    max-width: 800px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+.save-footer span {
+    font-weight: bold;
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+    text-align: center;
+    flex-grow: 1;
+}
+
+.save-footer button {
+    padding: 8px 14px;
+    background: #ffffff;
+    color: #000000;
+    border: 2px solid #000000;
+    font-weight: bold;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    white-space: nowrap;
+}
+
+.save-footer button:hover:not(:disabled) {
+    background: #000000;
+    color: #ffffff;
+}
+
+.save-footer button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.save-footer .back {
+    background: #ff0000;
+    color: #ffffff;
+    border-color: #ff0000;
+    padding: 8px 18px;
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+}
+
+.save-footer .back:hover {
+    background: #ff7e7e;
+    border-color: #ff7e7e;
+}
+
+/* --- Media Queries targeting standard pocket-sized devices --- */
+@media (max-width: 600px) {
+    .save-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .tab {
+        padding: 6px 14px;
+        font-size: 0.95rem;
+    }
+    
+    .save-footer {
+        margin-top: 20px;
+        padding-bottom: 35px; /* Safely clears modern iOS Safari Home Indicator bar */
+    }
+
+    .save-footer button {
+        padding: 6px 10px;
+        font-size: 0.85rem;
+    }
+    
+    .save-footer .back {
+        padding: 6px 14px;
+        font-size: 0.85rem;
+    }
+    
+    .save-footer span {
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 400px) {
+    .save-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .slot {
+        max-width: 100%;
+    }
+}

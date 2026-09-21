@@ -10,8 +10,8 @@ import { runScript, ScriptRuntimeError } from '../script_runtime.js';
  *     [tag] … [/tag]       multi-line block
  *     [tag "code"/]        inline single-line
  *
- * The only difference is the `lang` field on the produced step and the
- * matching opening/closing tags.
+ * The only difference is the `lang` field on the produced step and
+ * the matching open/close tag names.
  *
  * Multi-line accumulation is handled by the parser (see parser.ts).
  * When this tag sees the closing tag, it reads the accumulated lines
@@ -35,8 +35,7 @@ abstract class ScriptTagBase extends BaseTag {
     }
 
     parse(line: string, _lineIdx: number, ctx: ParseContext): TagParseResult {
-        // If we are inside a script block of a different language,
-        // defer to the next tag.
+        // Inside a script block of a different language, defer.
         if (ctx.in_script_block && ctx.script_lang !== this.lang) {
             return new TagParseResult({ consumed: false });
         }
@@ -71,14 +70,9 @@ abstract class ScriptTagBase extends BaseTag {
         return new TagParseResult({ consumed: false });
     }
 
-    execute(step: Step, ctx: ExecContext): ExecResult {
-        if (step.type !== 'script_exec') return null;
-        if (step.lang !== this.lang) return null;
-
-        // The runtime awaits executeScript asynchronously; see runtime.ts.
-        // Here we only signal that this tag owns the step. The actual
-        // execution happens in the dispatch layer.
-        void ctx;
+    execute(_step: Step, _ctx: ExecContext): ExecResult {
+        // Script execution is asynchronous. The runtime awaits it
+        // separately via executeScriptStep below.
         return null;
     }
 }
@@ -98,12 +92,8 @@ export class TsTag extends ScriptTagBase {
 }
 
 /**
- * Async dispatch hook invoked by the runtime when a `script_exec` step
- * is encountered. Both [python] and [ts] route through this function.
- *
- * The tag class itself cannot run async work in `execute` because the
- * tag dispatch loop is synchronous. Exposing this separate async
- * function keeps the tag interface simple.
+ * Called by the runtime for every `script_exec` step. Routes the code
+ * to the correct interpreter.
  */
 export async function executeScriptStep(step: Step, ctx: ExecContext): Promise<void> {
     if (step.type !== 'script_exec') return;

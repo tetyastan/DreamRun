@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "dreamrun-engine",
   "private": true,
   "version": "3.0.0",
   "type": "module",
@@ -12,14 +12,19 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
     "@sveltejs/adapter-auto": "^7.0.1",
     "@sveltejs/kit": "^2.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^8.2.2",
+    "html-to-image": "^1.11.13",
+    "pyodide": "^0.26.2",
     "svelte": "^5.56.1",
     "svelte-check": "^4.6.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16",
-    "pyodide": "^0.26.2"
+    "vite": "^8.0.16"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
   }
 }

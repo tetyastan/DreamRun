@@ -2,8 +2,21 @@ import fs from 'node:fs';
 import { ALL_TAGS } from './tags/registry.js';
 import { TagParseResult } from './tags/base.js';
 import type { ParseContext, ParsedScript, Step, ScopeFrame } from './types.js';
-import './tags/index.js'; 
 
+// Importing the barrel file registers every tag in the registry.
+import './tags/index.js';
+
+/**
+ * Parses a .dreamrun file into an executable step list.
+ *
+ * Every line is offered to each registered tag in order; the first
+ * tag that returns `consumed: true` claims the line. Scope tags
+ * ([ref], [choice], [answer], [if]) push and pop frames on a stack
+ * so that nested blocks are handled correctly.
+ *
+ * Returns null if the file does not exist. Throws if any line is not
+ * recognised or if blocks are left unclosed.
+ */
 export function parseDreamrunBlocks(filePath: string): ParsedScript | null {
     if (!fs.existsSync(filePath)) return null;
 
@@ -26,19 +39,18 @@ export function parseDreamrunBlocks(filePath: string): ParsedScript | null {
         const rawLine = lines[lineIdx];
         const line = rawLine.trim();
 
-        // -- Script block accumulation --
-        // When inside a [python] or [ts] block, preserve raw content
-        // until the matching close tag appears. The close tag falls
+        // Inside a [python] or [ts] block, accumulate raw lines until
+        // the matching close tag is seen. The close tag itself falls
         // through to the tag dispatch loop below.
         if (ctx.in_script_block) {
-            const isCloser =
-                line === '[/python]' || line === '[/ts]';
+            const isCloser = line === '[/python]' || line === '[/ts]';
             if (!isCloser) {
                 ctx.script_accumulator.push(rawLine.replace(/\r$/, ''));
                 continue;
             }
         }
 
+        // Skip blank lines and comments.
         if (!line || line.startsWith('#')) continue;
 
         let handled = false;
@@ -70,6 +82,10 @@ export function parseDreamrunBlocks(filePath: string): ParsedScript | null {
     return { steps: mainSteps, references: referencesMap };
 }
 
+/**
+ * Routes a step to the innermost open scope, or to the main track if
+ * no scope is currently open.
+ */
 function routeStep(ctx: ParseContext, step: Step, mainSteps: Step[]): void {
     const stack = ctx.scope_stack;
     if (stack.length > 0) {
@@ -90,6 +106,14 @@ function routeStep(ctx: ParseContext, step: Step, mainSteps: Step[]): void {
     mainSteps.push(step);
 }
 
+/**
+ * Pops the top scope frame and finalizes it.
+ *
+ * - A ref frame is registered in the references map.
+ * - A choice frame becomes a single `choice` step routed to its parent.
+ * - An answer frame is attached to the nearest enclosing choice.
+ * - An if frame becomes a `conditional_block` step with all branches.
+ */
 function closeScope(ctx: ParseContext, expectedType: string, lineIdx: number): void {
     const stack = ctx.scope_stack;
     const top = stack[stack.length - 1];

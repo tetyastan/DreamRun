@@ -2,19 +2,25 @@ import { AudioManager } from './AudioManager.svelte';
 
 /**
  * Main game runtime state manager built on Svelte 5 Runes.
- * Coordinates atomic image preloading, stylesheet decryption caching,
- * and gapless Web Audio context pipelines.
+ *
+ * Talks to the server over a single WebSocket. Every gameplay
+ * action — starting, advancing, choosing, saving, loading — is a
+ * message on that socket. There are no HTTP calls.
  */
 export class GameState {
     audioManager = new AudioManager();
 
     currentScreen = $state('MENU');
     sessionId = $state('');
-    hasNext = $state(false);
+    socket = null;
 
-    // Reactive array managing state-driven displayable overlay nodes
+    saveMenuMode = $state('LOAD');
+    saveMenuReturnTo = $state('MENU');
+    saveMenuSlots = $state([]);
+
+    hasNext = $state(false);
     activeImages = $state([]);
-    cssBlobCache = new Map(); // url -> local Blob URL memory reference
+    cssBlobCache = new Map();
 
     currentSpeaker = $state(null);
     currentText = $state('');
@@ -25,31 +31,194 @@ export class GameState {
 
     playerVariables = $state({});
     textSpeed = $state(7);
+    masterVolume = $state(1.0);
+
+    pendingScreenshot = null;
 
     errorData = $state({ status: 'None', message: 'None', details: 'None' });
-    isAnimating = $state(false);
     isLoading = $state(false);
     pendingNextStep = $state(false);
 
     showLoadingUI = $state(false);
     loadingTimeoutId = null;
-
     isGameStarted = $state(false);
-    dialogueQueue = $state([]);
     requestGeneration = 0;
     currentDialogue = $state(null);
 
+    // Resolvers for request/response pairs. The socket protocol is
+    // message-based, so any operation that needs a reply — save,
+    // load, list_saves — registers a resolver keyed by message type
+    // and awaits it.
+    _pending = new Map();
+
+    // Queue of messages sent before the socket opened. Flushed in order
+    // on the open event. Any message that needs to reach the server —
+    // identify, list_saves, save, load — goes through here rather than
+    // being dropped silently.
+    _queued = [];
+
     constructor() {
         if (typeof window !== 'undefined') {
+            // A stable per-browser identifier. Generated once, stored in
+            // localStorage, reused for every connection. It survives page
+            // reloads and is what the server keys save slots on. Setting
+            // it in the constructor rather than in connect() means
+            // listSaves and loadGame work even before startGame has been
+            // called — for example when the SaveMenu is opened from the
+            // main menu.
+            let ownerId = localStorage.getItem('dreamrun_owner_id');
+            if (!ownerId) {
+                ownerId = crypto.randomUUID();
+                localStorage.setItem('dreamrun_owner_id', ownerId);
+            }
+            this.ownerId = ownerId;
+
             const savedSpeed = localStorage.getItem('dreamrun_text_speed');
             if (savedSpeed) this.textSpeed = parseInt(savedSpeed, 10);
+
+            const savedVolume = localStorage.getItem('dreamrun_master_volume');
+            if (savedVolume !== null) {
+                const v = parseFloat(savedVolume);
+                if (Number.isFinite(v)) this.masterVolume = Math.max(0, Math.min(1, v));
+            }
+            this.audioManager.setMasterVolume(this.masterVolume);
+
             $effect.root(() => {
                 $effect(() => {
                     localStorage.setItem('dreamrun_text_speed', this.textSpeed.toString());
                 });
+                $effect(() => {
+                    localStorage.setItem('dreamrun_master_volume', this.masterVolume.toString());
+                    this.audioManager.setMasterVolume(this.masterVolume);
+                });
             });
         }
     }
+
+    // --- socket lifecycle --------------------------------------------
+
+    /**
+     * Opens the WebSocket and wires up the message dispatcher.
+     *
+     * Called once per session. The connection is reused for the
+     * lifetime of the playthrough; starting a new game sends a
+     * `start` message on the same socket rather than reconnecting.
+     */
+    connect() {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) return;
+
+        const url = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/game`;
+        this.socket = new WebSocket(url);
+        this.socket.onmessage = (e) => this._onMessage(JSON.parse(e.data));
+        this.socket.onopen = () => {
+            this._send({ type: 'identify', ownerId: this.ownerId });
+            this._flushQueue();
+        };
+        this.socket.onclose = () => {
+            console.warn('[DreamRun][ws] closed');
+            this.socket = null;
+        };
+        this.socket.onerror = (e) => {
+            console.error('[DreamRun][ws] error', e);
+        };
+    }
+
+    _send(payload) {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify(payload));
+            return;
+        }
+        // Not open yet. Queue it; _flushQueue will send it on `open`.
+        this._queued.push(payload);
+    }
+
+    _flushQueue() {
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+        const queue = this._queued;
+        this._queued = [];
+        for (const payload of queue) {
+            this.socket.send(JSON.stringify(payload));
+        }
+    }
+
+    /**
+     * Registers a one-shot resolver for the next message of a given
+     * type. Used for request/reply messages like save and load.
+     */
+    _await(type) {
+        return new Promise((resolve) => {
+            this._pending.set(type, resolve);
+        });
+    }
+
+    _resolve(type, value) {
+        const r = this._pending.get(type);
+        if (r) {
+            this._pending.delete(type);
+            r(value);
+        }
+    }
+
+    async _onMessage(msg) {
+        // --- DEBUG ---
+        console.log('[DreamRun][client][ws] message', msg.type, msg);
+        // ------------
+        switch (msg.type) {
+            case 'session':
+                // The first session message arrives at connect time with a null
+                // id — the server does not create a session until `start`. A
+                // second session message arrives immediately after `start` with
+                // the real id. Both cases are handled here.
+                if (msg.sessionId) this.sessionId = msg.sessionId;
+                if (typeof sessionStorage !== 'undefined' && msg.token) {
+                    sessionStorage.setItem('dreamrun_token', msg.token);
+                }
+                return;
+
+            case 'frame':
+                if (msg.variables) this.playerVariables = msg.variables;
+                this.processDialogue(msg.frame);
+                this.stopLoadingState();
+                return;
+
+            case 'end':
+                if (msg.variables) this.playerVariables = msg.variables;
+                this.stopLoadingState();
+                this.handleGameEnd();
+                return;
+
+            case 'loaded':
+                this.sessionId = msg.sessionId;
+                this.playerVariables = msg.variables || {};
+                await this.applyReplay(msg.replay);
+                if (Array.isArray(msg.warnings) && msg.warnings.length > 0) {
+                    console.warn('[DreamRun][load] warnings:', msg.warnings);
+                }
+                this._resolve('load', { ok: true, warnings: msg.warnings });
+                return;
+
+            case 'saved':
+                this._resolve('save', { ok: true, metadata: msg.metadata });
+                return;
+
+            case 'saves_list':
+                this.saveMenuSlots = msg.saves;
+                this._resolve('list_saves', { ok: true, saves: msg.saves });
+                return;
+
+            case 'error':
+                this._resolve('load', { ok: false, error: msg.status });
+                this._resolve('save', { ok: false, error: msg.status });
+                this._resolve('list_saves', { ok: false, error: msg.status });
+                this.showError(msg.status, msg.message, msg.details);
+                return;
+
+            default:
+                console.warn('[DreamRun][ws] unknown message', msg.type);
+        }
+    }
+
+    // --- loading state -----------------------------------------------
 
     startLoadingState() {
         this.isLoading = true;
@@ -84,9 +253,9 @@ export class GameState {
         this.errorData = { status, message, details };
         this.currentScreen = 'ERROR';
         this.stopLoadingState();
+        this.audioManager.clearAll();
         this.pendingNextStep = false;
         this.isGameStarted = false;
-        this.dialogueQueue = [];
         this.currentChoices = [];
         this.currentDialogue = null;
         if (this.pauseTimerId) {
@@ -97,46 +266,7 @@ export class GameState {
         this.sessionId = '';
     }
 
-    async parseAndShowBackendError(response) {
-        let rawText = '';
-        let payload = null;
-
-        try {
-            rawText = await response.text();
-            payload = rawText ? JSON.parse(rawText) : null;
-        } catch {
-            payload = null;
-        }
-
-        const status = response.status.toString();
-
-        // Preferred shape: { detail: { status, message, details } }
-        if (payload && payload.detail && typeof payload.detail === 'object') {
-            this.showError(
-                payload.detail.status || status,
-                payload.detail.message || `Backend error: ${response.statusText}`,
-                payload.detail.details || 'None'
-            );
-            return;
-        }
-
-        // Fallback for SvelteKit's default shape: { message: "..." }
-        if (payload && payload.message) {
-            this.showError(
-                status,
-                payload.message,
-                rawText || 'None'
-            );
-            return;
-        }
-
-        // Last resort: dump the raw body so nothing is lost.
-        this.showError(
-            status,
-            `Backend error: ${response.statusText}`,
-            rawText || 'None'
-        );
-    }
+    // --- styles and images -------------------------------------------
 
     async decryptAndLoadStyle(url) {
         if (!url) return null;
@@ -186,6 +316,8 @@ export class GameState {
                     imageBlob: blobImageStyle,
                     containerClass,
                     imageClass,
+                    containerCss: cmd.container_css || null,
+                    imageCss: cmd.image_css || null,
                     isHiding: false,
                 });
             } else if (modifier === 'modify') {
@@ -209,8 +341,18 @@ export class GameState {
         }
     }
 
+    // --- dialogue processing -----------------------------------------
+
     processDialogue(dialogue) {
         if (!dialogue) return;
+
+        // --- DEBUG ---
+        console.log('[DreamRun][client][processDialogue]', {
+            type: dialogue?.type,
+            name: dialogue?.name,
+            text: dialogue?.text,
+        });
+        // -------------
 
         this.currentDialogue = dialogue;
 
@@ -266,157 +408,24 @@ export class GameState {
         this.isGameStarted = true;
     }
 
-    async processBlock(steps) {
-        if (!Array.isArray(steps) || steps.length === 0) {
-            this.handleGameEnd();
-            return;
-        }
-
-        try {
-            const audioTargets = [];
-            const styleTargets = [];
-
-            for (const step of steps) {
-                if (!step) continue;
-
-                if (Array.isArray(step.audio)) {
-                    for (const cmd of step.audio) {
-                        if ((cmd.modifier === 'sound' || cmd.modifier === 'music')
-                            && cmd.path && !cmd.path.startsWith('MISSING:')) {
-                            audioTargets.push(cmd.path);
-                        }
-                    }
-                }
-
-                if (Array.isArray(step.images)) {
-                    for (const cmd of step.images) {
-                        if (cmd.img_path && !cmd.img_path.startsWith('MISSING:')) {
-                            styleTargets.push(fetch(cmd.img_path).catch(() => {}));
-                        }
-                        if (cmd.container_css && cmd.container_css !== 'none') {
-                            styleTargets.push(this.decryptAndLoadStyle(cmd.container_css));
-                        }
-                        if (cmd.image_css && cmd.image_css !== 'none') {
-                            styleTargets.push(this.decryptAndLoadStyle(cmd.image_css));
-                        }
-                    }
-                }
-            }
-
-            await Promise.all([
-                this.audioManager.preloadAudioBuffers(audioTargets),
-                ...styleTargets,
-            ]);
-        } catch (err) {
-            console.warn('[DreamRun][preload] Asset hydration fallback:', err);
-        }
-
-        if (steps[0] && steps[0].type === 'choice') {
-            this.processDialogue(steps[0]);
-            this.dialogueQueue = [];
-            return;
-        }
-
-        const filteredNodes = steps.filter(step =>
-            step && (step.type === 'dialogue' || step.type === 'choice' || step.type === 'pause' || step.type === 'image')
-        );
-
-        if (filteredNodes.length === 0) {
-            this.handleGameEnd();
-            return;
-        }
-
-        this.dialogueQueue = filteredNodes.slice(1);
-        this.processDialogue(filteredNodes[0]);
-    }
+    // --- gameplay ----------------------------------------------------
 
     async selectChoice(choiceIndex) {
         if (this.isLoading) return;
         this.startLoadingState();
-
-        const generation = this.requestGeneration;
-
-        try {
-            const response = await fetch('/api/game/choice', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Session-ID': this.sessionId,
-                },
-                body: JSON.stringify({ choice_index: choiceIndex }),
-            });
-
-            if (generation !== this.requestGeneration) return;
-            if (!response.ok) {
-                await this.parseAndShowBackendError(response);
-                return;
-            }
-
-            const data = await response.json();
-            if (data.variables) this.playerVariables = data.variables;
-            this.currentChoices = [];
-            await this.processBlock(data.steps);
-        } catch (err) {
-            if (generation !== this.requestGeneration) return;
-            this.showError(
-                'CHOICE_SUBMIT_ERROR',
-                'Failed to submit choice.',
-                err?.message || String(err)
-            );
-        } finally {
-            if (generation === this.requestGeneration) this.stopLoadingState();
-        }
+        this.currentChoices = [];
+        this._send({ type: 'choice', index: choiceIndex });
     }
 
     async nextStep() {
         if (this.pauseActive) return;
         if (!this.isGameStarted) return;
         if (this.currentChoices.length > 0) return;
-
-        if (this.dialogueQueue.length > 0) {
-            const nextNode = this.dialogueQueue.shift();
-            this.processDialogue(nextNode);
-            return;
-        }
-
         if (this.isLoading) return;
-        if (!this.sessionId) return;
 
         this.startLoadingState();
         this.pendingNextStep = false;
-
-        const generation = this.requestGeneration;
-
-        try {
-            const response = await fetch('/api/game/next', {
-                method: 'POST',
-                headers: { 'X-Session-ID': this.sessionId },
-            });
-
-            if (generation !== this.requestGeneration) return;
-            if (!response.ok) {
-                await this.parseAndShowBackendError(response);
-                return;
-            }
-
-            const data = await response.json();
-            if (data.variables) this.playerVariables = data.variables;
-
-            if (data.steps && data.steps.some(s => s.type === 'change_act')) {
-                this.clearBlobCache();
-            }
-
-            await this.processBlock(data.steps);
-        } catch (err) {
-            if (generation !== this.requestGeneration) return;
-            this.showError(
-                'GAME_FETCH_ERROR',
-                'Failed to advance sequence frames.',
-                err?.message || String(err)
-            );
-        } finally {
-            if (generation === this.requestGeneration) this.stopLoadingState();
-        }
+        this._send({ type: 'advance' });
     }
 
     async handleClick() {
@@ -441,41 +450,21 @@ export class GameState {
 
     async startGame() {
         this.requestGeneration += 1;
-        const generation = this.requestGeneration;
-
         this.resetGameState();
         this.startLoadingState();
 
-        try {
-            const response = await fetch('/api/game/start', { method: 'POST' });
-            if (generation !== this.requestGeneration) return;
-
-            if (!response.ok) {
-                await this.parseAndShowBackendError(response);
-                return;
-            }
-
-            const data = await response.json();
-            this.sessionId = data.session_id;
-            this.playerVariables = data.variables || {};
-
-            // Perform 100% of asset hydration preloading PRIOR to changing screens
-            await this.processBlock(data.steps);
-
-            // Change screen to active context only after assets are firmly bound into local memory
-            if (generation === this.requestGeneration) {
-                this.currentScreen = 'GAME';
-            }
-        } catch (err) {
-            if (generation !== this.requestGeneration) return;
-            this.showError(
-                'FETCH_ERROR',
-                'Backend connection error.',
-                err?.message || String(err)
-            );
-        } finally {
-            if (generation === this.requestGeneration) this.stopLoadingState();
+        this.connect();
+        // Wait for the socket to open before sending `start`.
+        const sendStart = () => this._send({ type: 'start' });
+        if (this.socket.readyState === WebSocket.OPEN) {
+            sendStart();
+        } else {
+            this.socket.addEventListener('open', sendStart, { once: true });
         }
+
+        // The first `frame` message will clear loading state and
+        // switch the screen.
+        this.currentScreen = 'GAME';
     }
 
     resetGameState() {
@@ -495,7 +484,6 @@ export class GameState {
         this.playerVariables = {};
         this.pendingNextStep = false;
         this.isGameStarted = false;
-        this.dialogueQueue = [];
         this.hasNext = false;
         this.errorData = { status: 'None', message: 'None', details: 'None' };
     }
@@ -509,7 +497,6 @@ export class GameState {
         this.isGameStarted = false;
         this.currentSpeaker = null;
         this.currentText = '';
-        this.dialogueQueue = [];
         this.currentChoices = [];
         this.currentDialogue = null;
         if (this.pauseTimerId) {
@@ -519,5 +506,105 @@ export class GameState {
         this.pauseActive = false;
         this.sessionId = '';
         this.hasNext = false;
+    }
+
+    // --- save / load -------------------------------------------------
+
+    async saveGame(slot) {
+        this.startLoadingState();
+        const wait = this._await('save');
+
+        // --- DEBUG ---
+        console.log('[DreamRun][client][save] sending', {
+            slot,
+            currentText: this.currentText,
+            currentSpeaker: this.currentSpeaker,
+            ownerId: this.ownerId,
+        });
+        // ------------
+
+        this._send({
+            type: 'save',
+            slot,
+            metadata: {
+                sceneName: this.currentSpeaker ?? null,
+                screenshot: this.pendingScreenshot,
+            },
+        });
+        const result = await wait;
+        this.pendingScreenshot = null;
+        this.stopLoadingState();
+        return result;
+    }
+
+    async loadGame(slot) {
+        this.startLoadingState();
+        const wait = this._await('load');
+
+        // --- DEBUG ---
+        console.log('[DreamRun][client][load] sending', { slot });
+        // ------------
+
+        this._send({ type: 'load', slot });
+        const result = await wait;
+
+        // --- DEBUG ---
+        console.log('[DreamRun][client][load] result', result);
+        // ------------
+
+        this.stopLoadingState();
+        if (result.ok) this.currentScreen = 'GAME';
+        return result;
+    }
+
+    /**
+     * Requests the occupancy map and metadata descriptors for all save slots.
+     * Explicitly appends the persistent ownerId to safeguard queries against early race conditions.
+     */
+    async listSaves() {
+        const wait = this._await('list_saves');
+        this._send({ type: 'list_saves' });
+        return wait;
+    }
+
+    /**
+     * Rebuilds the client scene from a replay journal.
+     * Clears existing state vectors and bulk-dispatches commands to minimize promise context overhead.
+     */
+    async applyReplay(replay) {
+        // --- DEBUG ---
+        console.log('[DreamRun][client][replay] details', {
+            images: replay?.images,
+            audio: replay?.audio,
+            firstFrame: replay?.firstFrame,
+        });
+        // ------------
+
+        this.audioManager.clearAll();
+        this.activeImages = [];
+        this.clearBlobCache();
+
+        if (!replay) return;
+
+        // Process image layout matrix structures bulk configurations
+        if (Array.isArray(replay.images) && replay.images.length > 0) {
+            await this.processImageCommands(replay.images);
+        }
+
+        if (Array.isArray(replay.audio) && replay.audio.length > 0) {
+            await this.audioManager.processAudioCommands(replay.audio);
+        }
+
+        if (replay.firstFrame) {
+            this.processDialogue(replay.firstFrame);
+        }
+
+        // --- DEBUG ---
+        console.log('[DreamRun][client][replay] finished', {
+            currentText: this.currentText,
+            currentSpeaker: this.currentSpeaker,
+            activeImages_count: this.activeImages.length,
+        });
+        // ------------
     }
 }

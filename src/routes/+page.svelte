@@ -7,6 +7,7 @@
   import GameScreen from '$lib/components/GameScreen.svelte';
   import MainMenu from '$lib/components/MainMenu.svelte';
   import SettingsMenu from '$lib/components/SettingsMenu.svelte';
+  import SaveMenu from '$lib/components/SaveMenu.svelte';
   import LoadingScreen from '$lib/components/LoadingScreen.svelte';
 
   // Initialize state context for all sub-components
@@ -42,6 +43,8 @@
     <GameScreen />
 {:else if game.currentScreen === 'ERROR'}
     <ErrorMsg />
+{:else if game.currentScreen === 'SAVES'}
+    <SaveMenu />
 {/if}
 
 {#if game.isLoading}

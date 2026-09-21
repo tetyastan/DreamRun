@@ -5,8 +5,11 @@ import { loadConfigFile } from '../config_loader.js';
 /**
  * Handles [config "filename"/].
  *
- * The tag emits a `load_config` step. Actual module loading is async,
- * so the runtime awaits it separately (see runtime.ts).
+ * The tag only emits a `load_config` step. Actual module loading is
+ * asynchronous, so the runtime awaits it via executeConfigStep below.
+ *
+ * Both quoted filenames and {var} placeholders are accepted. The .ts
+ * extension is appended automatically when missing.
  */
 export class ConfigTag extends BaseTag {
     name = 'config';
@@ -28,11 +31,14 @@ export class ConfigTag extends BaseTag {
     }
 
     execute(_step: Step, _ctx: ExecContext): ExecResult {
-        // Handled asynchronously; see executeConfigStep below.
         return null;
     }
 }
 
+/**
+ * Async handler for the `load_config` step. Loads the module into the
+ * session env.
+ */
 export async function executeConfigStep(step: Step, ctx: ExecContext): Promise<void> {
     if (step.type !== 'load_config') return;
     const filename = step.filename as string;

@@ -1,4 +1,3 @@
-<!-- src/lib/components/SettingsMenu.svelte -->
 <script>
     import './SettingsMenu.css';
     import { useGameContext } from '$lib/__index__.svelte';
@@ -15,15 +14,11 @@
             <div class="setting-row">
                 <label for="speed-range" class="label">Text Speed:</label>
                 <div class="slider-container">
-                    <!-- 
-                      min=1 (Slowest animation)
-                      max=11 (Instant text display without animation)
-                    -->
-                    <input 
+                    <input
                         id="speed-range"
-                        type="range" 
-                        min="1" 
-                        max="11" 
+                        type="range"
+                        min="1"
+                        max="11"
                         step="0.5"
                         bind:value={game.textSpeed}
                     />
@@ -33,6 +28,23 @@
                         {:else}
                             Speed {game.textSpeed}
                         {/if}
+                    </span>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <label for="volume-range" class="label">Master Volume:</label>
+                <div class="slider-container">
+                    <input
+                        id="volume-range"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        bind:value={game.masterVolume}
+                    />
+                    <span class="speed-value">
+                        {Math.round(game.masterVolume * 100)}%
                     </span>
                 </div>
             </div>
