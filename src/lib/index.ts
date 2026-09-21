@@ -1,0 +1,1 @@
+export { initGameContext, useGameContext } from './__index__.svelte.js';

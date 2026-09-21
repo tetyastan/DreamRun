@@ -7,6 +7,7 @@
     ],
     "patterns": [
         { "include": "#comments" },
+        { "include": "#ts-block" },
         { "include": "#python-block" },
         { "include": "#tags" },
         { "include": "#dialogue" }
@@ -23,6 +24,21 @@
                     "name": "comment.line.number-sign.dreamrun",
                     "match": "^\\s*#.*$"
                 }
+            ]
+        },
+
+        "ts-block": {
+            "begin": "^(\\s*)(\\[ts\\])\\s*$",
+            "end": "^(\\s*)(\\[/ts\\])\\s*$",
+            "name": "meta.embedded.block.ts.dreamrun",
+            "beginCaptures": {
+                "2": { "name": "keyword.control.tag.dreamrun" }
+            },
+            "endCaptures": {
+                "2": { "name": "keyword.control.tag.dreamrun" }
+            },
+            "patterns": [
+                { "include": "source.ts" }
             ]
         },
 
@@ -43,19 +59,22 @@
 
         "tags": {
             "patterns": [
+
                 {
-                    "match": "\\[(/)(python|ref|choice|if|answer)\\]",
+                    "match": "\\[(/)(python|ts|ref|choice|if|pyif|answer)\\]",
                     "captures": {
                         "1": { "name": "punctuation.definition.tag.dreamrun" },
                         "2": { "name": "keyword.control.tag.dreamrun" }
                     }
                 },
+
                 {
-                    "match": "\\[(choice|else)\\]",
+                    "match": "\\[(choice|else|pyelse)\\]",
                     "captures": {
                         "1": { "name": "keyword.control.tag.dreamrun" }
                     }
                 },
+
                 {
                     "match": "\\[(pause)\\s+(\\d+)(?:\\s+(block))?\\s*/\\]",
                     "captures": {
@@ -64,12 +83,14 @@
                         "3": { "name": "keyword.control.modifier.dreamrun" }
                     }
                 },
+
                 {
                     "match": "\\[(pass)\\s*/\\]",
                     "captures": {
                         "1": { "name": "keyword.control.tag.dreamrun" }
                     }
                 },
+
                 {
                     "match": "\\[(jump|goto)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*/?\\]",
                     "captures": {
@@ -77,6 +98,7 @@
                         "2": { "name": "variable.other.identifier.dreamrun" }
                     }
                 },
+
                 {
                     "match": "\\[(ref)\\s+([A-Za-z_][A-Za-z0-9_]*)\\]",
                     "captures": {
@@ -84,15 +106,28 @@
                         "2": { "name": "variable.other.identifier.dreamrun" }
                     }
                 },
+
                 {
-                    "match": "\\[(bg|config|next)\\s+(\"[^\"]*\")\\s*/?\\]",
+                    "match": "\\[(config|next)\\s+(\"[^\"]*\")\\s*/?\\]",
                     "captures": {
                         "1": { "name": "keyword.control.tag.dreamrun" },
                         "2": { "name": "string.quoted.double.path.dreamrun" }
                     }
                 },
+
                 {
-                    "match": "\\[(audio)\\s+(sound|music|modify|pause|resume|stop)\\s+(\"[^\"]*\")\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(\"[^\"]*\"))?(?:\\s+(\"[^\"]*\"))?\\s*/?\\]",
+                    "match": "\\[(image)\\s+(show|modify|hide)\\s+",
+                    "captures": {
+                        "1": { "name": "keyword.control.tag.dreamrun" },
+                        "2": { "name": "keyword.control.image-modifier.dreamrun" }
+                    },
+                    "patterns": [
+                        { "include": "#image-args" }
+                    ]
+                },
+
+                {
+                    "match": "\\[(audio)\\s+(sound|music)\\s+(\"[^\"]*\")\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(\"[^\"]*\"))?(?:\\s+(\"[^\"]*\"))?\\s*/?\\]",
                     "captures": {
                         "1": { "name": "keyword.control.tag.dreamrun" },
                         "2": { "name": "keyword.control.audio-modifier.dreamrun" },
@@ -102,6 +137,7 @@
                         "6": { "name": "string.quoted.double.audio.dreamrun" }
                     }
                 },
+
                 {
                     "match": "\\[(audio)\\s+(modify|pause|resume|stop)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(\"[^\"]*\"))?(?:\\s+(\"[^\"]*\"))?\\s*/?\\]",
                     "captures": {
@@ -112,6 +148,7 @@
                         "5": { "name": "string.quoted.double.audio.dreamrun" }
                     }
                 },
+
                 {
                     "match": "\\[(answer)\\s+(\"[^\"]*\")\\]",
                     "captures": {
@@ -119,8 +156,9 @@
                         "2": { "name": "string.quoted.double.answer.dreamrun" }
                     }
                 },
+
                 {
-                    "begin": "\\[(if|elif|else\\s+if)\\s+",
+                    "begin": "\\[(if|elif|else\\s+if|pyif|pyelif|pyelse\\s+if)\\s+",
                     "end": "\\]",
                     "beginCaptures": {
                         "1": { "name": "keyword.control.conditional.dreamrun" }
@@ -128,13 +166,14 @@
                     "endCaptures": {
                         "0": { "name": "punctuation.definition.tag.dreamrun" }
                     },
-                    "contentName": "meta.embedded.inline.python.dreamrun",
+                    "contentName": "meta.embedded.inline.expression.dreamrun",
                     "patterns": [
-                        { "include": "source.python" }
+                        { "include": "#expression-tokens" }
                     ]
                 },
+
                 {
-                    "begin": "\\[(python)\\s+\"",
+                    "begin": "\\[(ts|python)\\s+\"",
                     "end": "\"\\s*/?\\]",
                     "beginCaptures": {
                         "1": { "name": "keyword.control.tag.dreamrun" }
@@ -142,16 +181,78 @@
                     "endCaptures": {
                         "0": { "name": "punctuation.definition.tag.dreamrun" }
                     },
-                    "contentName": "meta.embedded.inline.python.dreamrun",
+                    "contentName": "meta.embedded.inline.code.dreamrun",
                     "patterns": [
-                        { "include": "source.python" }
+                        { "include": "source.ts" }
                     ]
+                }
+
+            ]
+        },
+
+        "image-args": {
+            "patterns": [
+                {
+                    "match": "\"([^\"]*)\"",
+                    "captures": {
+                        "1": { "name": "string.quoted.double.image.dreamrun" }
+                    }
+                },
+                {
+                    "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\b",
+                    "captures": {
+                        "1": { "name": "variable.other.identifier.dreamrun" }
+                    }
+                },
+                {
+                    "match": "\\b(-?\\d+)\\b",
+                    "captures": {
+                        "1": { "name": "constant.numeric.layer.dreamrun" }
+                    }
+                },
+                {
+                    "match": "\\{(?:\\.\\.)?[A-Za-z_][A-Za-z0-9_.]*\\}",
+                    "name": "variable.other.template.dreamrun"
+                }
+            ]
+        },
+
+        "expression-tokens": {
+            "patterns": [
+                {
+                    "match": "\\b(and|or|not|in|is|None|True|False)\\b",
+                    "name": "keyword.operator.python.dreamrun"
+                },
+                {
+                    "match": "\\b(&&|\\|\\||!)\\b",
+                    "name": "keyword.operator.ts.dreamrun"
+                },
+                {
+                    "match": "\\b(if|else|elif)\\b",
+                    "name": "keyword.control.flow.dreamrun"
+                },
+                {
+                    "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\b",
+                    "captures": {
+                        "1": { "name": "variable.other.identifier.dreamrun" }
+                    }
+                },
+                {
+                    "match": "\\b(\\d+(?:\\.\\d+)?)\\b",
+                    "captures": {
+                        "1": { "name": "constant.numeric.dreamrun" }
+                    }
+                },
+                {
+                    "match": "\"[^\"]*\"|'[^']*'",
+                    "name": "string.quoted.expression.dreamrun"
                 }
             ]
         },
 
         "dialogue": {
             "patterns": [
+
                 {
                     "match": "^\\s*(:)([A-Za-z_][A-Za-z0-9_]*)(:)(\\s*>\\s*)(\"[^\"]*\"|'[^']*')",
                     "captures": {
@@ -162,6 +263,7 @@
                         "5": { "name": "string.quoted.dialogue.dreamrun" }
                     }
                 },
+
                 {
                     "match": "^\\s*([A-Za-z][^>\\n]*?)(\\s*>\\s*)(\"[^\"]*\"|'[^']*')",
                     "captures": {
@@ -170,13 +272,24 @@
                         "3": { "name": "string.quoted.dialogue.dreamrun" }
                     }
                 },
+
                 {
                     "match": "^\\s*(>\\s*)(\"[^\"]*\"|'[^']*')",
                     "captures": {
                         "1": { "name": "punctuation.separator.dialogue.dreamrun" },
                         "2": { "name": "string.quoted.dialogue.dreamrun" }
                     }
+                },
+
+                {
+                    "comment": "Template expressions inside dialogue strings",
+                    "match": "\\{(?:\\.\\.)?([A-Za-z_][A-Za-z0-9_]*)(?:\\.([A-Za-z_][A-Za-z0-9_]*))?(?:\\s+[^}]*)?\\}",
+                    "captures": {
+                        "1": { "name": "variable.other.template.dreamrun" },
+                        "2": { "name": "variable.other.property.dreamrun" }
+                    }
                 }
+
             ]
         }
     }

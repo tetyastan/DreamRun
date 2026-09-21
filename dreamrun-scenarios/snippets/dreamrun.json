@@ -49,6 +49,38 @@
         "description": "Conditional block with elif and else"
     },
 
+    "DreamRun: pyif / pyelif / pyelse": {
+        "prefix": "pyif",
+        "body": [
+            "[pyif ${1:condition}]",
+            "    $0",
+            "[pyelif ${2:other_condition}]",
+            "    ",
+            "[pyelse]",
+            "    ",
+            "[/pyif]"
+        ],
+        "description": "Python conditional block with pyelif and pyelse"
+    },
+
+    "DreamRun: ts block": {
+        "prefix": "ts",
+        "body": [
+            "[ts]",
+            "    $0",
+            "[/ts]"
+        ],
+        "description": "Multi-line TypeScript block"
+    },
+
+    "DreamRun: ts inline": {
+        "prefix": "tsi",
+        "body": [
+            "[ts \"${1:code}\"/]"
+        ],
+        "description": "Inline single-line TypeScript"
+    },
+
     "DreamRun: python block": {
         "prefix": "python",
         "body": [
@@ -57,6 +89,14 @@
             "[/python]"
         ],
         "description": "Multi-line Python block"
+    },
+
+    "DreamRun: python inline": {
+        "prefix": "pyi",
+        "body": [
+            "[python \"${1:code}\"/]"
+        ],
+        "description": "Inline single-line Python"
     },
 
     "DreamRun: narrator line": {
@@ -83,12 +123,12 @@
         "description": "Dialogue line with literal speaker"
     },
 
-    "DreamRun: background change": {
-        "prefix": "bg",
+    "DreamRun: config import": {
+        "prefix": "config",
         "body": [
-            "[bg \"/backgrounds/${1:name}.jpg\"/]"
+            "[config \"${1:game_init}\"/]"
         ],
-        "description": "Change background"
+        "description": "Import a config module"
     },
 
     "DreamRun: next act": {
@@ -115,11 +155,107 @@
         "description": "Unconditional jump (does not return)"
     },
 
-    "DreamRun: audio": {
-        "prefix": "audio",
+    "DreamRun: pass": {
+        "prefix": "pass",
         "body": [
-            "[audio ${1|sound,music,modify,pause,resume,stop|} \"${2:/path/file.wav}\" ${3:id} \"${4:1.0}\" \"${5:1.0}\"/]"
+            "[pass/]"
         ],
-        "description": "Play, modify, pause, resume or stop an audio track"
+        "description": "Deliberate no-op"
+    },
+
+    "DreamRun: pause": {
+        "prefix": "pause",
+        "body": [
+            "[pause ${1:2000}${2: block}/]"
+        ],
+        "description": "Timed pause, optional click blocking"
+    },
+
+    "DreamRun: image show": {
+        "prefix": "imgshow",
+        "body": [
+            "[image show \"${1:/images/sprite.png}\" ${2:sprite_id} ${3:10} \"${4:/styles/container.css}\" \"${5:/styles/image.css}\"/]"
+        ],
+        "description": "Show a layered image"
+    },
+
+    "DreamRun: image modify": {
+        "prefix": "imgmod",
+        "body": [
+            "[image modify \"${1:/images/sprite.png}\" ${2:sprite_id} ${3:10} \"${4:/styles/container.css}\" \"${5:/styles/image.css}\"/]"
+        ],
+        "description": "Modify an existing layered image"
+    },
+
+    "DreamRun: image hide": {
+        "prefix": "imghide",
+        "body": [
+            "[image hide ${1:sprite_id}/]"
+        ],
+        "description": "Hide a layered image"
+    },
+
+    "DreamRun: audio music (fade in)": {
+        "prefix": "music",
+        "body": [
+            "[audio music \"${1:/audio/theme.mp3}\" ${2:bgm} \"${3:0.5}~${4:2000}\" \"1.0\"/]"
+        ],
+        "description": "Play a looping track with a fade-in"
+    },
+
+    "DreamRun: audio sound": {
+        "prefix": "sound",
+        "body": [
+            "[audio sound \"${1:/audio/hit.wav}\" ${2:sfx} \"1.0\" \"1.0\"/]"
+        ],
+        "description": "Play a one-shot sound effect"
+    },
+
+    "DreamRun: audio modify": {
+        "prefix": "audiomod",
+        "body": [
+            "[audio modify ${1:bgm} \"${2:0.6}~${3:1000}\" \"1.0\"/]"
+        ],
+        "description": "Smoothly change volume or pitch of a playing track"
+    },
+
+    "DreamRun: audio pause": {
+        "prefix": "audiopause",
+        "body": [
+            "[audio pause ${1:bgm}/]"
+        ],
+        "description": "Pause a playing track"
+    },
+
+    "DreamRun: audio resume": {
+        "prefix": "audioresume",
+        "body": [
+            "[audio resume ${1:bgm}/]"
+        ],
+        "description": "Resume a paused track"
+    },
+
+    "DreamRun: audio stop": {
+        "prefix": "audiostop",
+        "body": [
+            "[audio stop ${1:bgm}/]"
+        ],
+        "description": "Stop a playing track"
+    },
+
+    "DreamRun: animated counter {0..N : ms}": {
+        "prefix": "anim",
+        "body": [
+            "\\{0..${1:100} : ${2:2000}\\}"
+        ],
+        "description": "Animated counter inside dialogue"
+    },
+
+    "DreamRun: animated counter {..var : ms}": {
+        "prefix": "animv",
+        "body": [
+            "\\{..${1:hero.hp} : ${2:2000}\\}"
+        ],
+        "description": "Animated counter toward a variable's value"
     }
 }
