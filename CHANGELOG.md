@@ -17,6 +17,12 @@ changelog does not describe them.
 
 ## Unreleased
 
+## 3.1.1 — 2026-09-24
+
+### Fixed
+
+- File `.saves.json` added to gitignore.
+
 ## 3.1.0 — 2026-09-21
 
 The first release with a stable, documented public interface. From this point
