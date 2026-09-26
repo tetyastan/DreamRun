@@ -8,7 +8,6 @@ import { buildSaveFile, restoreFromSaveFile } from './save_manager.js';
 import { getPublicVariables } from './utils.js';
 import { listSaves, getSave, putSave } from './saves.js';
 import { Character, Ramp } from './runtime_types.js';
-import type { Session, RecordedChoice } from './types.js';
 import type { SaveMetadata } from './save_types.js';
 
 export type SocketState = {
@@ -16,6 +15,7 @@ export type SocketState = {
     sessionId: string | null;
     token: string;
     ownerId: string | null;
+    _queue: Promise<void>;
     onClose: () => void;
 };
 
@@ -63,7 +63,7 @@ export async function handleSocketMessage(
             case 'choice':   return await onChoice(state, msg.index);
             case 'save':     return await onSave(state, msg);
             case 'load':     return await onLoad(state, msg);
-            case 'list_saves': return await onListSaves(state, msg);
+            case 'list_saves': return await onListSaves(state);
             case 'resume':   return await onResume(state, msg.token);
             default:
                 return sendError(state.ws, 'UNKNOWN_MESSAGE', `Unknown type: ${msg.type}`, 'None');

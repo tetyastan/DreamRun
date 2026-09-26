@@ -6,7 +6,7 @@ export const ANIMATION_PATTERN =
 export const ANIMATION_SHORT_PATTERN =
     /^\s*(?<to>-?\d+(?:\.\d+)?)\s*~\s*(?<duration>\d+)\s*$/;
 
-export type Animation = { from: number; to: number; duration_ms: number };
+export type Animation = { from: number | null; to: number; duration_ms: number };
 
 /**
  * Parses a numeric argument that may carry an animation descriptor.

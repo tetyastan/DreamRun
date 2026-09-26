@@ -32,7 +32,7 @@ export function buildFrame(step: Step, name: string | null, ctx: ExecContext): F
         // contain '..' or '~' are animation descriptors and are not
         // touched.
         const templateString = raw
-            .replace(/`/g, '\\` electro_escape_backtick')
+            .replace(/`/g, '\\`')
             .replace(/\{(?!\d+(?:\.\d+)?(?:\.\.|~))([^}]+)\}/g, '\${\$1}');
 
         const templateEvaluator = new Function('env', 'templateString', `

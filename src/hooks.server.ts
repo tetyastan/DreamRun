@@ -1,5 +1,4 @@
 import type { Handle } from '@sveltejs/kit';
-import { attachGameSocket } from '$lib/server/ws_gateway.js';
 
 /**
  * Standard SvelteKit request hook.

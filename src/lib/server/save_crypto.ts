@@ -44,7 +44,7 @@ export async function encryptSave(plaintext: Uint8Array): Promise<Uint8Array> {
     const key = await getKey();
     const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
     const cipher = new Uint8Array(await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv }, key, plaintext
+        { name: 'AES-GCM', iv: iv as BufferSource }, key, plaintext as BufferSource
     ));
 
     const out = new Uint8Array(MAGIC.length + IV_LENGTH + cipher.length);
@@ -71,7 +71,7 @@ export async function decryptSave(blob: Uint8Array): Promise<Uint8Array> {
     const cipher = blob.subarray(MAGIC.length + IV_LENGTH);
     const key = await getKey();
     const plain = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv }, key, cipher
+        { name: 'AES-GCM', iv: iv as BufferSource }, key, cipher as BufferSource
     );
     return new Uint8Array(plain);
 }
